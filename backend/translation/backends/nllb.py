@@ -7,6 +7,7 @@ from backend.config import (
     DEVICE,
     NLLB_MAX_INPUT_TOKENS,
     PARALLEL_BATCH_SIZE,
+    NUM_BEAMS,
     TORCH_DTYPE,
     get_local_model_dir,
 )
@@ -89,7 +90,7 @@ class NLLBBackend(BaseTranslationBackend):
                     **inputs,
                     forced_bos_token_id=tgt_token_id,
                     max_new_tokens=NLLB_MAX_INPUT_TOKENS,
-                    num_beams=4,
+                    num_beams=NUM_BEAMS,
                     early_stopping=True,
                 )
 

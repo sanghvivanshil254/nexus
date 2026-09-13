@@ -21,7 +21,7 @@ def estimate_tokens(text: str) -> int:
 
 def chunk_text(
     text: str, 
-    max_tokens: int = 400, 
+    max_tokens: int = 512, 
     tokenizer = None
 ) -> List[str]:
     """
@@ -32,13 +32,8 @@ def chunk_text(
     if not text:
         return []
 
-    # If tokenizer is provided, measure exact tokens
+    # Use fast conservative token estimation to avoid expensive CPU tokenizer roundtrips
     def get_token_count(s: str) -> int:
-        if tokenizer is not None:
-            try:
-                return len(tokenizer.encode(s, add_special_tokens=False))
-            except Exception:
-                pass
         return estimate_tokens(s)
 
     current_tokens = get_token_count(text)

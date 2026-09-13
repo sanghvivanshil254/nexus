@@ -9,6 +9,7 @@ from backend.config import (
     DEVICE,
     INDICTRANS_MAX_INPUT_TOKENS,
     PARALLEL_BATCH_SIZE,
+    NUM_BEAMS,
     TORCH_DTYPE,
     BACKEND_DIR,
     get_local_model_dir,
@@ -90,7 +91,7 @@ class IndicTrans2Backend(BaseTranslationBackend):
         self.processor = None
         super().unload()
 
-    def _generate_batch(self, batch: List[str], src_lang: str, tgt_lang: str, num_beams: int = 4) -> List[str]:
+    def _generate_batch(self, batch: List[str], src_lang: str, tgt_lang: str, num_beams: int = NUM_BEAMS) -> List[str]:
         processed = self.processor.preprocess_batch(batch, src_lang=src_lang, tgt_lang=tgt_lang)
         inputs = self.tokenizer(
             processed,

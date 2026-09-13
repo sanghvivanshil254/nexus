@@ -106,22 +106,46 @@ class MongoDBManager:
                 logger.error("Error creating job in Mongo: %s", e)
         return job_doc
 
-    def update_job_progress(self, job_id: str, completed_pages: int, total_pages: int, status: str = "processing"):
+    def update_job_progress(
+        self, 
+        job_id: str, 
+        completed_pages: int, 
+        total_pages: int, 
+        status: str = "processing",
+        latest_page_num: Optional[int] = None,
+        latest_translated_text: Optional[str] = None,
+        latest_blocks: Optional[List[Dict[str, Any]]] = None,
+        latest_page_image: Optional[str] = None,
+        output_file: Optional[str] = None,
+        **extra
+    ):
         if not self.is_connected:
             return
         progress = (completed_pages / total_pages * 100) if total_pages > 0 else 0.0
+        update_fields: Dict[str, Any] = {
+            "status": status,
+            "completed_pages": completed_pages,
+            "total_pages": total_pages,
+            "progress": round(progress, 2),
+            "updated_at": time.time()
+        }
+        if latest_page_num is not None:
+            update_fields["latest_page_num"] = latest_page_num
+        if latest_translated_text is not None:
+            update_fields["latest_translated_text"] = latest_translated_text
+        if latest_blocks is not None:
+            update_fields["latest_blocks"] = latest_blocks
+        if latest_page_image is not None:
+            update_fields["latest_page_image"] = latest_page_image
+        if output_file is not None:
+            update_fields["output_file"] = output_file
+        for k, v in extra.items():
+            if v is not None:
+                update_fields[k] = v
         try:
             self.jobs_col.update_one(
                 {"job_id": job_id},
-                {
-                    "$set": {
-                        "status": status,
-                        "completed_pages": completed_pages,
-                        "total_pages": total_pages,
-                        "progress": round(progress, 2),
-                        "updated_at": time.time()
-                    }
-                }
+                {"$set": update_fields}
             )
         except Exception as e:
             logger.error("Error updating job progress: %s", e)

@@ -28,12 +28,28 @@ import {
   RefreshCw,
   Sparkles,
   ChevronRight,
-  Database
+  Database,
+  Terminal
 } from 'lucide-react';
 import { useToast } from '../../components/Toast';
+import { useBackendStatus } from '../../hooks/useBackendStatus';
+import { nexusApi } from '../../services/nexusApi';
 
 export const AdminDashboard = ({ currentUser }) => {
   const { addToast } = useToast();
+  const { 
+    isConnected: isBackendOnline, 
+    device, 
+    modelTier, 
+    mongodbConnected, 
+    loadedModels, 
+    cachedModels, 
+    offlineReady, 
+    languageCount, 
+    recheck, 
+    isLoading 
+  } = useBackendStatus();
+
   const [activeAdminTab, setActiveAdminTab] = useState('overview'); // overview, users, models, logs, quotas
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('ALL');
@@ -207,29 +223,39 @@ export const AdminDashboard = ({ currentUser }) => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            background: '#ecfdf5',
-            border: '1px solid #a7f3d0',
+            background: isBackendOnline ? '#ecfdf5' : '#fff7ed',
+            border: `1px solid ${isBackendOnline ? '#a7f3d0' : '#ffedd5'}`,
             padding: '6px 12px',
             borderRadius: '10px',
             fontSize: '0.8rem',
-            color: '#065f46',
+            color: isBackendOnline ? '#065f46' : '#9a3412',
             fontWeight: 600
           }}>
-            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-            <span>GPU Cluster: 100% Healthy (6/6 Nodes)</span>
+            <span style={{ 
+              width: '8px', 
+              height: '8px', 
+              borderRadius: '50%', 
+              background: isBackendOnline ? '#10b981' : '#f97316', 
+              display: 'inline-block',
+              boxShadow: isBackendOnline ? '0 0 6px rgba(16, 185, 129, 0.6)' : 'none'
+            }} />
+            <span>{isBackendOnline ? `FastAPI: Online (${device?.toUpperCase() || 'CPU'}) | Tier: ${(modelTier || 'compact').toUpperCase()}` : 'Backend: Standalone Demo Mode'}</span>
           </div>
 
           <button
-            onClick={() => addToast('System telemetry refreshed', 'success')}
+            onClick={() => {
+              recheck();
+              addToast('System telemetry and hardware status refreshed', 'success');
+            }}
             className="btn btn-secondary btn-sm"
             style={{ padding: '6px 12px' }}
           >
-            <RefreshCw size={14} />
+            <RefreshCw size={14} style={{ animation: isLoading ? 'spin 1s linear infinite' : 'none' }} />
             <span>Refresh</span>
           </button>
         </div>
@@ -304,53 +330,53 @@ export const AdminDashboard = ({ currentUser }) => {
           }}>
             <div className="card" style={{ padding: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Total Documents Ingested</span>
-                <FileText size={18} color="#2563eb" />
+                <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Supported Languages</span>
+                <Globe2 size={18} color="#2563eb" />
               </div>
               <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.25rem' }}>
-                148,290
+                {languageCount || 41}
               </div>
               <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>
-                ↑ 24.5% from last month
+                22 Indian + Global Languages
               </span>
             </div>
 
             <div className="card" style={{ padding: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Average Inference Time</span>
-                <Clock size={18} color="#06b6d4" />
+                <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Hardware Device</span>
+                <Cpu size={18} color="#06b6d4" />
               </div>
               <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.25rem' }}>
-                420 ms
+                {device?.toUpperCase() || 'CPU'}
               </div>
-              <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>
-                ⚡ Sub-second across all scripts
+              <span style={{ fontSize: '0.75rem', color: device === 'cuda' ? '#10b981' : '#64748b', fontWeight: 600 }}>
+                {device === 'cuda' ? '⚡ GPU Acceleration Active' : 'CPU Processing Mode'}
               </span>
             </div>
 
             <div className="card" style={{ padding: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Mean Extraction Accuracy</span>
-                <CheckCircle2 size={18} color="#10b981" />
+                <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Active Model Tier</span>
+                <Sparkles size={18} color="#f59e0b" />
               </div>
               <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.25rem' }}>
-                99.38%
+                {(modelTier || 'compact').toUpperCase()}
               </div>
-              <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>
-                Character-level precision
+              <span style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600 }}>
+                {modelTier === 'best' ? '1B / 1.3B Parameter Best' : '200M / 600M Distilled Compact'}
               </span>
             </div>
 
             <div className="card" style={{ padding: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Active GPU Workers</span>
-                <Server size={18} color="#4f46e5" />
+                <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Persistence & Cache</span>
+                <Database size={18} color="#4f46e5" />
               </div>
               <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.25rem' }}>
-                6 / 6 Online
+                {mongodbConnected ? 'MongoDB Live' : 'In-Memory Mode'}
               </div>
-              <span style={{ fontSize: '0.75rem', color: '#4f46e5', fontWeight: 600 }}>
-                A100 Tensor Core Nodes
+              <span style={{ fontSize: '0.75rem', color: mongodbConnected ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
+                {mongodbConnected ? 'Persistent Job & Translation Cache' : 'Ultra-fast RAM Cache Fallback'}
               </span>
             </div>
           </div>
@@ -587,6 +613,131 @@ export const AdminDashboard = ({ currentUser }) => {
       {/* ================= TAB 3: MODEL ENGINES & PIPELINE CONFIG ================= */}
       {activeAdminTab === 'models' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          
+          {/* Real Backend Model Cache & Hardware Offloader Telemetry Card */}
+          <div className="card" style={{ padding: '1.5rem', background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a' }}>
+                    Local Offline Model Cache & VRAM Offloader
+                  </h3>
+                  <span className={`badge ${offlineReady ? 'badge-success' : 'badge-neutral'}`}>
+                    {offlineReady ? 'OFFLINE READY' : 'ONLINE INGEST'}
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                  Locally downloaded neural weights in <code>backend/models/</code> and dynamic GPU/CPU offload status.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  recheck();
+                  addToast('Refreshed model cache status from disk', 'info');
+                }}
+                className="btn btn-secondary btn-sm"
+              >
+                <RefreshCw size={14} style={{ animation: isLoading ? 'spin 1s linear infinite' : 'none' }} />
+                <span>Scan Models Dir</span>
+              </button>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '1rem',
+              marginBottom: '1rem'
+            }}>
+              {/* Cached Models on Disk */}
+              <div style={{
+                background: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                padding: '1rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <HardDrive size={16} color="#2563eb" />
+                  <strong style={{ fontSize: '0.88rem', color: '#0f172a' }}>Offline Weights Directory</strong>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: 'auto' }}>
+                    ({cachedModels.length} cached)
+                  </span>
+                </div>
+                {cachedModels.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {cachedModels.map((m, i) => (
+                      <div key={i} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 10px',
+                        background: '#f8fafc',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem'
+                      }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0f172a' }}>{m}</span>
+                        <span className="badge badge-success" style={{ fontSize: '0.68rem' }}>Cached</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: '8px', background: '#f8fafc', borderRadius: '8px', fontSize: '0.78rem', color: '#64748b' }}>
+                    <span>No local model folders found in <code>backend/models/</code>. Run CLI to download weights:</span>
+                    <pre style={{
+                      margin: '6px 0 0',
+                      padding: '6px 8px',
+                      background: '#0f172a',
+                      color: '#38bdf8',
+                      borderRadius: '6px',
+                      fontSize: '0.72rem',
+                      fontFamily: 'var(--font-mono)'
+                    }}>
+                      python backend/scripts/download_models.py --model indictrans2 --tier compact --direction en-indic
+                    </pre>
+                  </div>
+                )}
+              </div>
+
+              {/* VRAM Loaded Models */}
+              <div style={{
+                background: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                padding: '1rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <Cpu size={16} color="#06b6d4" />
+                  <strong style={{ fontSize: '0.88rem', color: '#0f172a' }}>Resident VRAM / RAM Models</strong>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: 'auto' }}>
+                    ({loadedModels.length} active)
+                  </span>
+                </div>
+                {loadedModels.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {loadedModels.map((m, i) => (
+                      <div key={i} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 10px',
+                        background: '#ecfeff',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem'
+                      }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0891b2' }}>{m}</span>
+                        <span className="badge badge-primary" style={{ fontSize: '0.68rem' }}>In Memory</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: '8px', background: '#f8fafc', borderRadius: '8px', fontSize: '0.78rem', color: '#64748b' }}>
+                    <span>No models currently loaded in memory. Models are loaded on-demand via LRU cache on first translation request.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Active Model Engines Switchboard */}
           <div className="card" style={{ padding: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>

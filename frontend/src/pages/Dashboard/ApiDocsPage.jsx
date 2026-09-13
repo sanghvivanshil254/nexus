@@ -33,64 +33,117 @@ export const ApiDocsPage = ({ user }) => {
     addToast('API Key copied to clipboard', 'info');
   };
 
+  const [liveTestEndpoint, setLiveTestEndpoint] = useState('/api/health');
+  const [liveTestResponse, setLiveTestResponse] = useState(null);
+  const [isTestingLive, setIsTestingLive] = useState(false);
+
+  const handleRunLiveTest = async (endpoint) => {
+    setLiveTestEndpoint(endpoint);
+    setIsTestingLive(true);
+    setLiveTestResponse(null);
+    try {
+      const response = await fetch(endpoint);
+      const data = await response.json();
+      setLiveTestResponse(data);
+      addToast(`Received ${response.status} OK from ${endpoint}`, 'success');
+    } catch (err) {
+      setLiveTestResponse({ error: err.message, note: 'Backend server is currently offline. Start with: uvicorn backend.main:app --port 8000' });
+      addToast(`Could not reach ${endpoint}. Is backend running on port 8000?`, 'warning');
+    } finally {
+      setIsTestingLive(false);
+    }
+  };
+
   const snippets = {
     python: `import requests
+import time
 
-url = "https://api.nexusocr.ai/v2/pipeline/extract"
-headers = {
-    "Authorization": "Bearer ${apiKey}",
-    "X-Engine-Mode": "multilingual-deep-transformer"
+BASE_URL = "http://localhost:8000"
+
+# 1. Queue a PDF translation task (English -> Gujarati)
+with open("Panchatantra.pdf", "rb") as f:
+    response = requests.post(
+        f"{BASE_URL}/api/translate",
+        files={"file": f},
+        data={
+            "src_lang": "en",
+            "tgt_lang": "gu",  # Supports 22 Indic + Global languages
+            "max_pages": 5      # Optional page range limit
+        }
+    )
+
+job = response.json()
+job_id = job["job_id"]
+print(f"Queued Job ID: {job_id}")
+
+# 2. Poll for translation & HarfBuzz vector layout completion
+while True:
+    status = requests.get(f"{BASE_URL}/api/jobs/{job_id}").json()
+    print(f"Status: {status['status']} | Progress: {status.get('progress', 0)}%")
+    if status["status"] in ("completed", "failed"):
+        break
+    time.sleep(2)
+
+# 3. Download translated PDF with preserved visual layout
+if status["status"] == "completed":
+    pdf_res = requests.get(f"{BASE_URL}/api/jobs/{job_id}/download")
+    with open("Panchatantra_Gujarati.pdf", "wb") as out:
+        out.write(pdf_res.content)
+    print("Downloaded translated PDF successfully!")`,
+
+    curl: `# 1. Submit PDF translation job to Nexus offline pipeline
+curl -X POST "http://localhost:8000/api/translate" \\
+  -F "file=@./Panchatantra.pdf" \\
+  -F "src_lang=en" \\
+  -F "tgt_lang=gu" \\
+  -F "max_pages=5"
+
+# Expected Response:
+# {"job_id":"job_9a8b7c6d","filename":"Panchatantra.pdf","status":"queued"}
+
+# 2. Check translation progress
+curl -X GET "http://localhost:8000/api/jobs/job_9a8b7c6d"
+
+# 3. Download completed PDF with HarfBuzz complex-script shaping
+curl -X GET "http://localhost:8000/api/jobs/job_9a8b7c6d/download" \\
+  --output "Panchatantra_Gujarati.pdf"`,
+
+    nodejs: `import fs from 'fs';
+import FormData from 'form-data';
+import fetch from 'node-fetch';
+
+const BASE_URL = 'http://localhost:8000';
+
+async function translateDocument() {
+  const form = new FormData();
+  form.append('file', fs.createReadStream('./Panchatantra.pdf'));
+  form.append('src_lang', 'en');
+  form.append('tgt_lang', 'gu');
+  form.append('max_pages', '5');
+
+  // Submit translation job
+  const res = await fetch(\`\${BASE_URL}/api/translate\`, { method: 'POST', body: form });
+  const { job_id } = await res.json();
+  console.log(\`Job Queued: \${job_id}\`);
+
+  // Poll status
+  let isDone = false;
+  while (!isDone) {
+    await new Promise(r => setTimeout(r, 2000));
+    const statusRes = await fetch(\`\${BASE_URL}/api/jobs/\${job_id}\`);
+    const status = await statusRes.json();
+    console.log(\`Progress: \${status.progress}% (\${status.completed_pages}/\${status.total_pages} pgs)\`);
+    if (status.status === 'completed') isDone = true;
+  }
+
+  // Download translated PDF
+  const dlRes = await fetch(\`\${BASE_URL}/api/jobs/\${job_id}/download\`);
+  const buffer = await dlRes.buffer();
+  fs.writeFileSync('./Panchatantra_Translated.pdf', buffer);
+  console.log('Saved translated PDF with layout preservation!');
 }
 
-files = {
-    "document": open("japanese_tax_certificate.pdf", "rb")
-}
-
-data = {
-    "target_language": "ja",
-    "extract_tables": "true",
-    "extract_entities": "true",
-    "translate_to": "en"
-}
-
-response = requests.post(url, headers=headers, files=files, data=data)
-extraction_result = response.json()
-
-print(f"Recognized Script: {extraction_result['detected_script']}")
-print(f"Confidence: {extraction_result['confidence']}%")
-for entity in extraction_result['entities']:
-    print(f"  [{entity['tag']}] {entity['label']}: {entity['value']}")`,
-
-    curl: `curl -X POST "https://api.nexusocr.ai/v2/pipeline/extract" \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -H "X-Engine-Mode: multilingual-deep-transformer" \\
-  -F "document=@./hindi_hospital_discharge.jpg" \\
-  -F "target_language=hi" \\
-  -F "extract_tables=true" \\
-  -F "extract_entities=true" \\
-  -F "translate_to=en"`,
-
-    nodejs: `import { NexusOCR } from '@nexusocr/sdk';
-import fs from 'fs';
-
-const client = new NexusOCR({
-  apiKey: '${apiKey}',
-  cluster: 'us-east-gpu'
-});
-
-async function runMultilingualOCR() {
-  const result = await client.pipeline.extract({
-    file: fs.createReadStream('./german_supply_invoice.pdf'),
-    language: 'de',
-    features: ['NER', 'TABLE_EXTRACTION', 'TRANSLATION'],
-    translateTo: 'en'
-  });
-
-  console.log('Entities extracted:', result.entities);
-  console.log('Structured Table Data:', result.tables);
-}
-
-runMultilingualOCR();`
+translateDocument();`
   };
 
   return (
@@ -248,6 +301,84 @@ runMultilingualOCR();`
             <Copy size={14} />
             <span>Copy Snippet</span>
           </button>
+        </div>
+      </div>
+
+      {/* Interactive Live Endpoint Tester */}
+      <div style={{
+        marginTop: '2rem',
+        background: '#ffffff',
+        borderRadius: '16px',
+        border: '1px solid #e2e8f0',
+        padding: '1.5rem',
+        boxShadow: 'var(--shadow-sm)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
+          <div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', marginBottom: '2px' }}>
+              Interactive Live API Tester
+            </h3>
+            <p style={{ fontSize: '0.84rem', color: '#64748b' }}>
+              Send real queries directly to the local FastAPI backend and inspect response JSON payloads.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => handleRunLiveTest('/api/health')}
+              className="btn btn-secondary btn-sm"
+              style={{ fontSize: '0.78rem' }}
+            >
+              <span>GET /api/health</span>
+            </button>
+            <button
+              onClick={() => handleRunLiveTest('/api/models/status')}
+              className="btn btn-secondary btn-sm"
+              style={{ fontSize: '0.78rem' }}
+            >
+              <span>GET /api/models/status</span>
+            </button>
+            <button
+              onClick={() => handleRunLiveTest('/api/languages')}
+              className="btn btn-secondary btn-sm"
+              style={{ fontSize: '0.78rem' }}
+            >
+              <span>GET /api/languages</span>
+            </button>
+          </div>
+        </div>
+
+        <div style={{
+          background: '#0f172a',
+          borderRadius: '10px',
+          padding: '1rem',
+          minHeight: '140px',
+          maxHeight: '360px',
+          overflowY: 'auto'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.4rem' }}>
+            <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>
+              Endpoint: <strong style={{ color: '#38bdf8' }}>{liveTestEndpoint}</strong>
+            </span>
+            {isTestingLive && (
+              <span style={{ fontSize: '0.72rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                <span>Executing HTTP GET...</span>
+              </span>
+            )}
+          </div>
+
+          <pre style={{
+            margin: 0,
+            fontSize: '0.78rem',
+            color: liveTestResponse?.error ? '#f87171' : '#a7f3d0',
+            fontFamily: 'var(--font-mono)',
+            lineHeight: 1.5,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word'
+          }}>
+            {liveTestResponse ? JSON.stringify(liveTestResponse, null, 2) : '// Click one of the test buttons above to ping live FastAPI endpoints.'}
+          </pre>
         </div>
       </div>
 

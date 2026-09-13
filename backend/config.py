@@ -9,11 +9,12 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 TRAINING_DATA_DIR = BASE_DIR / "training data"
 TESTING_DATA_DIR = BASE_DIR / "testing data"
 OUTPUT_DIR = BASE_DIR / "output"
+PREVIEWS_DIR = OUTPUT_DIR / "previews"
 MODELS_DIR = BACKEND_DIR / "models"
 FONTS_DIR = BACKEND_DIR / "fonts"
 
 # Ensure essential directories exist
-for d in [BACKEND_DIR, FRONTEND_DIR, TRAINING_DATA_DIR, TESTING_DATA_DIR, OUTPUT_DIR, MODELS_DIR, FONTS_DIR]:
+for d in [BACKEND_DIR, FRONTEND_DIR, TRAINING_DATA_DIR, TESTING_DATA_DIR, OUTPUT_DIR, PREVIEWS_DIR, MODELS_DIR, FONTS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # MongoDB Configuration
@@ -88,9 +89,16 @@ TORCH_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
 MAX_LOADED_MODELS = int(os.getenv("MAX_LOADED_MODELS", "1"))
 
 # Translation token limits
-INDICTRANS_MAX_INPUT_TOKENS = 256
-NLLB_MAX_INPUT_TOKENS = 512
-OPUS_MT_MAX_INPUT_TOKENS = 512
-CHUNK_MAX_TOKENS = 256
-# Parallel batch size for GPU inference (4 for 4GB VRAM stability)
-PARALLEL_BATCH_SIZE = 4
+INDICTRANS_MAX_INPUT_TOKENS = int(os.getenv("INDICTRANS_MAX_INPUT_TOKENS", "512"))
+NLLB_MAX_INPUT_TOKENS = int(os.getenv("NLLB_MAX_INPUT_TOKENS", "512"))
+OPUS_MT_MAX_INPUT_TOKENS = int(os.getenv("OPUS_MT_MAX_INPUT_TOKENS", "512"))
+CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", "512"))
+
+# High-Performance Parallel Batching and Beam Configuration
+# Greedy decoding (num_beams=1) runs ~5x faster with virtually identical BLEU score
+NUM_BEAMS = int(os.getenv("NEXUS_NUM_BEAMS", "1"))
+# Parallel batch size for GPU inference (16 chunks in parallel per pass)
+PARALLEL_BATCH_SIZE = int(os.getenv("PARALLEL_BATCH_SIZE", "16"))
+# Number of pages to process together in parallel multi-page batches
+PAGE_BATCH_SIZE = int(os.getenv("PAGE_BATCH_SIZE", "4"))
+

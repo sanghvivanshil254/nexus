@@ -11,10 +11,15 @@ import {
   Globe2, 
   ChevronRight, 
   CheckCircle2,
-  X
+  X,
+  Activity,
+  RefreshCw
 } from 'lucide-react';
+import { useBackendStatus } from '../hooks/useBackendStatus';
 
 export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileOpen, setIsMobileOpen }) => {
+  const { isConnected, device, modelTier, languageCount, recheck, isLoading } = useBackendStatus();
+
   const navItems = [
     { id: 'landing', label: 'Home Overview', icon: Home, badge: null },
     { id: 'dashboard', label: 'OCR Studio', icon: FileSearch, badge: 'Active' },
@@ -228,22 +233,38 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
         {/* Bottom: User Profile & Status */}
         <div style={{ padding: '0.85rem', borderTop: '1px solid #f1f5f9', background: '#fafbfc' }}>
           
-          {/* Cluster SLA Status Pill */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '6px 10px',
-            borderRadius: '8px',
-            background: '#ecfdf5',
-            border: '1px solid #a7f3d0',
-            fontSize: '0.72rem',
-            color: '#065f46',
-            fontWeight: 600,
-            marginBottom: '0.75rem'
-          }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-            <span>Cluster 99.98% SLA Online</span>
+          {/* Live Backend Connection Status Pill */}
+          <div 
+            onClick={recheck}
+            title={isConnected ? `Nexus Backend Online (${device?.toUpperCase() || 'CPU'}) - ${languageCount} languages - Tier: ${modelTier}. Click to refresh.` : 'Nexus Backend is not detected. Running in client-side demo mode. Click to recheck.'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '6px 10px',
+              borderRadius: '8px',
+              background: isConnected ? '#ecfdf5' : '#f8fafc',
+              border: `1px solid ${isConnected ? '#a7f3d0' : '#e2e8f0'}`,
+              fontSize: '0.72rem',
+              color: isConnected ? '#065f46' : '#64748b',
+              fontWeight: 600,
+              marginBottom: '0.75rem',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ 
+                width: '6px', 
+                height: '6px', 
+                borderRadius: '50%', 
+                background: isConnected ? '#10b981' : '#94a3b8', 
+                display: 'inline-block',
+                boxShadow: isConnected ? '0 0 6px rgba(16, 185, 129, 0.6)' : 'none'
+              }} />
+              <span>{isConnected ? `Backend: ${device?.toUpperCase() || 'CPU'} (${languageCount} Langs)` : 'Backend: Standalone Demo'}</span>
+            </div>
+            <RefreshCw size={11} style={{ opacity: 0.6, animation: isLoading ? 'spin 1s linear infinite' : 'none' }} />
           </div>
 
           {/* User Profile Card */}
