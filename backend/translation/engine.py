@@ -1,0 +1,218 @@
+import logging
+import re
+from typing import Dict, List, Optional, Tuple
+
+from backend.config import (
+    CHUNK_MAX_TOKENS,
+    DEVICE,
+    MAX_LOADED_MODELS,
+    PARALLEL_BATCH_SIZE,
+    TORCH_DTYPE,
+)
+from backend.translation.backends.base import BaseTranslationBackend
+from backend.translation.backends.indictrans2 import IndicTrans2Backend
+from backend.translation.backends.nllb import NLLBBackend
+from backend.translation.backends.opus_mt import OpusMTBackend
+from backend.translation.backends.afrinllb import AfriNLLBBackend
+from backend.translation.cache import translation_cache
+from backend.translation.chunker import chunk_text
+from backend.translation.router import ModelRouter, normalize_lang_code
+
+logger = logging.getLogger("nexus.translation.engine")
+
+
+class UniversalTranslationEngine:
+    """
+    Universal Multilingual Offline Translation Hub.
+    Orchestrates multiple specialist and global backends:
+    - IndicTrans2 (1B or distilled): Purpose-built for 22 scheduled Indian languages
+    - NLLB-200 (1.3B or 600M): Broad multilingual safety net for global languages
+    - OPUS-MT (MarianMT): Targeted pair specialists for high-performing pairs
+
+    Features:
+    - Smart routing based on source and target language pairs
+    - LRU backend offloading to prevent GPU/RAM exhaustion
+    - Two-tier caching (RAM + MongoDB) partitioned by model ID
+    - Sentence-aware parallel chunking
+    """
+
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._init_engine()
+        return cls._instance
+
+    def _init_engine(self):
+        self.device = DEVICE
+        self.torch_dtype = TORCH_DTYPE
+        self.max_loaded_models = MAX_LOADED_MODELS
+        self._backends: Dict[str, BaseTranslationBackend] = {}
+        self._loaded_lru: List[str] = []
+        logger.info("UniversalTranslationEngine initialized (device=%s, max_loaded=%d).", self.device, self.max_loaded_models)
+
+    def get_backend(self, src_lang: str, tgt_lang: str) -> Tuple[BaseTranslationBackend, str]:
+        """
+        Resolves the appropriate backend for (src_lang, tgt_lang) via ModelRouter,
+        and manages LRU memory loading/unloading.
+        """
+        decision = ModelRouter.route(src_lang, tgt_lang)
+        backend_key = f"{decision.backend_type}::{decision.model_id}"
+
+        if backend_key not in self._backends:
+            if decision.backend_type == "indictrans2":
+                self._backends[backend_key] = IndicTrans2Backend(
+                    model_id=decision.model_id,
+                    direction=decision.direction_key,
+                    device=self.device,
+                    torch_dtype=self.torch_dtype,
+                )
+            elif decision.backend_type == "nllb":
+                self._backends[backend_key] = NLLBBackend(
+                    model_id=decision.model_id,
+                    device=self.device,
+                    torch_dtype=self.torch_dtype,
+                )
+            elif decision.backend_type == "afrinllb":
+                self._backends[backend_key] = AfriNLLBBackend(
+                    model_id=decision.model_id,
+                    device=self.device,
+                    torch_dtype=self.torch_dtype,
+                )
+            elif decision.backend_type == "opus_mt":
+                self._backends[backend_key] = OpusMTBackend(
+                    model_id=decision.model_id,
+                    device=self.device,
+                    torch_dtype=self.torch_dtype,
+                )
+            else:
+                raise ValueError(f"Unknown backend type: {decision.backend_type}")
+
+        backend = self._backends[backend_key]
+
+        # Enforce LRU memory bounds
+        if not backend.is_loaded:
+            while len(self._loaded_lru) >= self.max_loaded_models:
+                lru_key = self._loaded_lru.pop(0)
+                if lru_key in self._backends:
+                    logger.info("Evicting backend [%s] from VRAM to make room for [%s]", lru_key, backend_key)
+                    self._backends[lru_key].unload()
+
+            backend.load()
+            self._loaded_lru.append(backend_key)
+        else:
+            # Refresh LRU position
+            if backend_key in self._loaded_lru:
+                self._loaded_lru.remove(backend_key)
+            self._loaded_lru.append(backend_key)
+
+        return backend, decision.model_id
+
+    @staticmethod
+    def is_translatable(text: str) -> bool:
+        """Determines if text contains translatable words or is purely numbers/symbols."""
+        s = text.strip()
+        if len(s) < 2:
+            return False
+        if re.fullmatch(r"[\d\s\.,;:/\-+\(\)%=#@\$!_]+", s):
+            return False
+        return not re.match(r"^(https?://|www\.|mailto:|[\w.+-]+@[\w.-]+$)", s)
+
+    def translate_chunks_parallel(
+        self, chunks: List[str], src_lang: str, tgt_lang: str, batch_size: int = PARALLEL_BATCH_SIZE
+    ) -> List[str]:
+        """Translates text chunks with two-tier cache lookup and batch inference."""
+        if not chunks:
+            return []
+
+        src = normalize_lang_code(src_lang)
+        tgt = normalize_lang_code(tgt_lang)
+        if src == tgt:
+            return chunks
+
+        backend, model_id = self.get_backend(src, tgt)
+
+        results: List[Optional[str]] = [None] * len(chunks)
+        uncached_indices: List[int] = []
+        uncached_chunks: List[str] = []
+
+        for index, chunk in enumerate(chunks):
+            if not self.is_translatable(chunk):
+                results[index] = chunk
+                continue
+            cached = translation_cache.get(chunk, src, tgt, model=model_id)
+            if cached is not None:
+                results[index] = cached
+            else:
+                uncached_indices.append(index)
+                uncached_chunks.append(chunk)
+
+        if not uncached_chunks:
+            return [item or "" for item in results]
+
+        translated_batch = backend.translate_batch(uncached_chunks, src_lang=src, tgt_lang=tgt, batch_size=batch_size)
+
+        for index, source, output in zip(uncached_indices, uncached_chunks, translated_batch):
+            clean = output.strip()
+            results[index] = clean
+            translation_cache.set(source, clean, src, tgt, model=model_id)
+
+        return [item or "" for item in results]
+
+    def translate_text(self, text: str, src_lang: str = "en", tgt_lang: str = "gu") -> str:
+        """Translates single text string with sentence-level chunking."""
+        if not text or not text.strip() or not self.is_translatable(text):
+            return text
+        src, tgt = normalize_lang_code(src_lang), normalize_lang_code(tgt_lang)
+        if src == tgt:
+            return text
+
+        backend, _ = self.get_backend(src, tgt)
+        chunks = chunk_text(text, max_tokens=CHUNK_MAX_TOKENS, tokenizer=backend.tokenizer)
+        translated_chunks = self.translate_chunks_parallel(chunks, src, tgt)
+        return ("\n" if "\n" in text else " ").join(translated_chunks)
+
+    def translate_batch(
+        self, texts: List[str], src_lang: str = "en", tgt_lang: str = "gu", batch_size: int = PARALLEL_BATCH_SIZE
+    ) -> List[str]:
+        """Translates a batch of texts with chunking, caching, and layout preservation."""
+        if not texts:
+            return []
+        src, tgt = normalize_lang_code(src_lang), normalize_lang_code(tgt_lang)
+        if src == tgt:
+            return texts
+
+        backend, model_id = self.get_backend(src, tgt)
+
+        results: List[Optional[str]] = [None] * len(texts)
+        chunk_map: Dict[int, List[int]] = {}
+        all_chunks: List[str] = []
+
+        for text_index, text in enumerate(texts):
+            if not self.is_translatable(text):
+                results[text_index] = text
+                continue
+            cached = translation_cache.get(text, src, tgt, model=model_id)
+            if cached is not None:
+                results[text_index] = cached
+                continue
+            start = len(all_chunks)
+            all_chunks.extend(chunk_text(text, max_tokens=CHUNK_MAX_TOKENS, tokenizer=backend.tokenizer))
+            chunk_map[text_index] = list(range(start, len(all_chunks)))
+
+        if all_chunks:
+            translated_chunks = self.translate_chunks_parallel(all_chunks, src, tgt, batch_size)
+            for text_index, indexes in chunk_map.items():
+                source = texts[text_index]
+                output = ("\n" if "\n" in source else " ").join(translated_chunks[i] for i in indexes)
+                results[text_index] = output
+                translation_cache.set(source, output, src, tgt, model=model_id)
+
+        return [item or "" for item in results]
+
+
+# Singleton instance and backward-compatible alias
+UniversalEngine = UniversalTranslationEngine
+IndicTrans2TranslationEngine = UniversalTranslationEngine
+translation_engine = UniversalTranslationEngine()

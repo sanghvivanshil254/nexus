@@ -1,0 +1,47 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Offline Model Checkpoints & Weights
+# (Model weights are multi-gigabyte binaries; download via backend/scripts/download_models.py)
+models/*
+!models/.gitkeep
+backend/models/*
+!backend/models/.gitkeep
+backend/hf_modules/
+*.safetensors
+*.safetensors.partial
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# Output PDFs, intermediate test images & logs
+output/*
+!output/.gitkeep
+*.log
+*.png
+*.tmp.pdf
+
+# Training data
+training data/*
+!training data/.gitkeep
+
+# Environment & local virtualenvs
+.env
+.env.*
+.venv
+env/
+venv/
+ENV/
+
+# OS / Editor specific files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

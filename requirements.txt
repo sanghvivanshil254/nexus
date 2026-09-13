@@ -1,0 +1,11 @@
+torch
+# IndicTrans2 custom inference code is built against this Transformers API.
+transformers==4.32.1
+IndicTransToolkit==1.1.1
+pymupdf
+pymongo
+paddleocr
+fastapi
+uvicorn[standard]
+python-multipart
+sentencepiece
