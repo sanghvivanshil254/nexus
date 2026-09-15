@@ -16,9 +16,12 @@ from backend.translation.backends.opus_mt import OpusMTBackend
 from backend.translation.backends.afrinllb import AfriNLLBBackend
 from backend.translation.cache import translation_cache
 from backend.translation.chunker import chunk_text
-from backend.translation.router import ModelRouter, normalize_lang_code
+from backend.translation.router import ModelRouter, normalize_lang_code, should_pivot_via_english
 
 logger = logging.getLogger("nexus.translation.engine")
+
+# Bridge language for two-stage translation of distant pairs.
+PIVOT_LANG = "eng_Latn"
 
 
 class UniversalTranslationEngine:
@@ -122,7 +125,13 @@ class UniversalTranslationEngine:
     def translate_chunks_parallel(
         self, chunks: List[str], src_lang: str, tgt_lang: str, batch_size: int = PARALLEL_BATCH_SIZE
     ) -> List[str]:
-        """Translates text chunks with two-tier cache lookup and batch inference."""
+        """
+        Translates text chunks with two-tier cache lookup and batch inference.
+
+        This is the direct single-model primitive: it does not pivot. Callers
+        wanting automatic English pivoting for distant pairs should use
+        translate_batch / translate_text.
+        """
         if not chunks:
             return []
 
@@ -153,6 +162,15 @@ class UniversalTranslationEngine:
 
         translated_batch = backend.translate_batch(uncached_chunks, src_lang=src, tgt_lang=tgt, batch_size=batch_size)
 
+        # A backend that returns a short list would silently blank out the tail
+        # of the document via zip(), so fail loudly instead.
+        if len(translated_batch) != len(uncached_chunks):
+            raise RuntimeError(
+                f"Backend returned {len(translated_batch)} translations for "
+                f"{len(uncached_chunks)} chunks ({src}->{tgt}, model={model_id}). "
+                "Refusing to drop text."
+            )
+
         for index, source, output in zip(uncached_indices, uncached_chunks, translated_batch):
             clean = output.strip()
             results[index] = clean
@@ -161,17 +179,13 @@ class UniversalTranslationEngine:
         return [item or "" for item in results]
 
     def translate_text(self, text: str, src_lang: str = "en", tgt_lang: str = "gu") -> str:
-        """Translates single text string with sentence-level chunking."""
+        """Translates a single string with sentence-level chunking and English pivoting."""
         if not text or not text.strip() or not self.is_translatable(text):
             return text
         src, tgt = normalize_lang_code(src_lang), normalize_lang_code(tgt_lang)
         if src == tgt:
             return text
-
-        backend, _ = self.get_backend(src, tgt)
-        chunks = chunk_text(text, max_tokens=CHUNK_MAX_TOKENS, tokenizer=backend.tokenizer)
-        translated_chunks = self.translate_chunks_parallel(chunks, src, tgt)
-        return ("\n" if "\n" in text else " ").join(translated_chunks)
+        return self.translate_batch([text], src_lang=src, tgt_lang=tgt)[0]
 
     def translate_batch(
         self, texts: List[str], src_lang: str = "en", tgt_lang: str = "gu", batch_size: int = PARALLEL_BATCH_SIZE
@@ -180,6 +194,40 @@ class UniversalTranslationEngine:
         if not texts:
             return []
         src, tgt = normalize_lang_code(src_lang), normalize_lang_code(tgt_lang)
+        if src == tgt:
+            return texts
+
+        # Distant Indic pairs (and any pair whose direct model is not downloaded)
+        # are routed through English in two passes.
+        if should_pivot_via_english(src, tgt):
+            return self._translate_batch_pivoted(texts, src, tgt, batch_size)
+
+        return self._translate_batch_direct(texts, src, tgt, batch_size)
+
+    def _translate_batch_pivoted(
+        self, texts: List[str], src: str, tgt: str, batch_size: int
+    ) -> List[str]:
+        """
+        Two-stage translation via English: src -> eng_Latn -> tgt.
+
+        Each stage uses the specialist indic-en / en-indic models, which are
+        higher quality than the direct indic-indic model and avoid needing a
+        third model on disk. Both stages cache independently, so the English
+        intermediate is reused across target languages.
+        """
+        logger.info("Pivoting %s -> %s via English (2 passes, %d texts).", src, tgt, len(texts))
+        english = self._translate_batch_direct(texts, src, PIVOT_LANG, batch_size)
+        # Preserve untranslatable entries (numbers, URLs) from the original.
+        english = [
+            original if not self.is_translatable(original) else pivoted
+            for original, pivoted in zip(texts, english)
+        ]
+        return self._translate_batch_direct(english, PIVOT_LANG, tgt, batch_size)
+
+    def _translate_batch_direct(
+        self, texts: List[str], src: str, tgt: str, batch_size: int
+    ) -> List[str]:
+        """Single-model batch translation with block- and chunk-level caching."""
         if src == tgt:
             return texts
 

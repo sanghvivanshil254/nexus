@@ -72,9 +72,25 @@ class IndicTrans2Backend(BaseTranslationBackend):
                 model_kwargs["torch_dtype"] = self.torch_dtype
             self.model = AutoModelForSeq2SeqLM.from_pretrained(model_source, **model_kwargs).to(self.device)
             self.model.eval()
+
+            # Patch IndicTransAttention.forward to safely handle transformers v4.40+ (None, None) past_key_value on step 0
+            if hasattr(self.model, "model") and hasattr(self.model.model, "decoder") and self.model.model.decoder.layers:
+                attn_cls = self.model.model.decoder.layers[0].self_attn.__class__
+                if not getattr(attn_cls, "_nexus_cache_patched", False):
+                    orig_attn_forward = attn_cls.forward
+                    def _patched_attn_forward(self_attn, hidden_states, key_value_states=None, past_key_value=None, **kwargs):
+                        if past_key_value is not None and isinstance(past_key_value, (tuple, list)):
+                            if len(past_key_value) == 0 or past_key_value[0] is None:
+                                past_key_value = None
+                        return orig_attn_forward(
+                            self_attn, hidden_states, key_value_states=key_value_states, past_key_value=past_key_value, **kwargs
+                        )
+                    attn_cls.forward = _patched_attn_forward
+                    attn_cls._nexus_cache_patched = True
+
             self.processor = IndicProcessor(inference=True)
             self.is_loaded = True
-            logger.info("IndicTrans2 [%s] ready.", self.model_id)
+            logger.info("IndicTrans2 [%s] ready with fast KV-caching.", self.model_id)
         except OSError as exc:
             if "gated repo" in str(exc).lower() or "401" in str(exc):
                 raise RuntimeError(
@@ -108,11 +124,8 @@ class IndicTrans2Backend(BaseTranslationBackend):
                     **inputs,
                     max_new_tokens=INDICTRANS_MAX_INPUT_TOKENS,
                     num_beams=num_beams,
-                    # IndicTrans2's custom model code predates the newer
-                    # Transformers cache object. Disable cache decoding for
-                    # compatibility with the installed runtime.
-                    use_cache=False,
-                    early_stopping=True,
+                    use_cache=True,
+                    early_stopping=True if num_beams > 1 else False,
                 )
 
             decoded = self.tokenizer.batch_decode(generated, skip_special_tokens=True, clean_up_tokenization_spaces=True)
@@ -143,12 +156,10 @@ class IndicTrans2Backend(BaseTranslationBackend):
         self.load()
 
         all_outputs: List[str] = []
-        eff_batch_size = min(batch_size, 2)
+        eff_batch_size = max(1, min(batch_size, 16))
         for i in range(0, len(texts), eff_batch_size):
             batch = texts[i : i + eff_batch_size]
-            batch_results = self._generate_batch(batch, src_lang=src_lang, tgt_lang=tgt_lang, num_beams=4)
+            batch_results = self._generate_batch(batch, src_lang=src_lang, tgt_lang=tgt_lang, num_beams=NUM_BEAMS)
             all_outputs.extend(batch_results)
-            if self.device == "cuda":
-                torch.cuda.empty_cache()
 
         return all_outputs

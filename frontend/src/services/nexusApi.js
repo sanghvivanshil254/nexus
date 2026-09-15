@@ -178,6 +178,12 @@ export const nexusApi = {
 
   saveJobToHistory(job) {
     try {
+      // Translation history is only saved persistently if the user is signed in
+      const currentUser = localStorage.getItem('nexus_ocr_user');
+      if (!currentUser) {
+        return;
+      }
+
       const jobs = this.getLocalJobs();
       const existingIdx = jobs.findIndex(j => j.job_id === job.job_id);
       if (existingIdx >= 0) {

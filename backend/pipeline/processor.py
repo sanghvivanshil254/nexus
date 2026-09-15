@@ -4,33 +4,136 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import pymupdf
 import logging
 
-from backend.config import OUTPUT_DIR, PREVIEWS_DIR, PARALLEL_BATCH_SIZE, PAGE_BATCH_SIZE
+from backend.config import (
+    AUTO_DETECT_SOURCE_LANG,
+    OUTPUT_DIR,
+    PREVIEWS_DIR,
+    PARALLEL_BATCH_SIZE,
+    PAGE_BATCH_SIZE,
+    SKIP_HEADERS_FOOTERS,
+)
 from backend.db.mongo import mongo_db
 from backend.translation.engine import translation_engine
-from backend.translation.router import normalize_lang_code
+from backend.translation.router import (
+    detect_script_language,
+    flores_to_display_name,
+    normalize_lang_code,
+)
+from backend.layout.fonts import script_of
 from backend.pipeline.analyzer import PDFStructureAnalyzer
 from backend.pipeline.layout import PDFLayoutReconstructor
 from backend.pipeline.cleaner import clean_ocr_text
+from backend.pipeline.ocr import ocr_engine
 
 logger = logging.getLogger("nexus.processor")
+
 
 class DocumentProcessor:
     """
     End-to-End Orchestrator for Multilingual PDF Translation:
     1. Loads PDF via PyMuPDF
-    2. Runs PDFStructureAnalyzer per page
-    3. Translates text blocks in parallel inference batches with 256-token chunking and MongoDB caching
-    4. Reconstructs layout using PDFLayoutReconstructor and Indic fonts
-    5. Saves output PDF to output/ folder, renders realtime page previews, and updates MongoDB job status
+    2. Runs PDFStructureAnalyzer per page, falling back to OCR on scanned pages
+    3. Validates the declared source language against the script on the page
+    4. Translates text blocks in parallel inference batches with 256-token chunking and MongoDB caching
+    5. Reconstructs layout using PDFLayoutReconstructor and script-appropriate fonts
+    6. Saves output PDF to output/ folder, renders realtime page previews, and updates MongoDB job status
     """
 
     def __init__(self):
         self.analyzer = PDFStructureAnalyzer()
         self.reconstructor = PDFLayoutReconstructor()
+
+    # ------------------------------------------------------------------ #
+    # Page text acquisition
+    # ------------------------------------------------------------------ #
+
+    def _extract_page_blocks(
+        self, page: pymupdf.Page, analysis: Dict[str, Any], page_num: int
+    ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+        """
+        Returns the translatable blocks for a page plus an optional warning.
+
+        Scanned pages carry their text inside a raster image, so get_text() finds
+        nothing and the page would pass through untranslated. Those pages are
+        routed to OCR instead.
+        """
+        text_blocks = analysis.get("text_blocks", [])
+
+        if not analysis.get("is_scanned"):
+            return text_blocks, None
+
+        if not ocr_engine.is_available:
+            warning = (
+                f"Page {page_num} is a scanned image and no OCR engine is available "
+                f"({ocr_engine.unavailable_reason}). The page will be copied "
+                f"untranslated."
+            )
+            logger.error(warning)
+            return text_blocks, warning
+
+        logger.info("Page %d is scanned; running OCR (%s).", page_num, ocr_engine.engine_name)
+        ocr_blocks = ocr_engine.ocr_page(page)
+        if not ocr_blocks:
+            warning = (
+                f"Page {page_num} is a scanned image but OCR ({ocr_engine.engine_name}) "
+                f"returned no text. The page will be copied untranslated."
+            )
+            logger.warning(warning)
+            return text_blocks, warning
+
+        logger.info("OCR recovered %d text blocks from scanned page %d.", len(ocr_blocks), page_num)
+        # Replace rather than merge: the few native blocks on a scanned page are
+        # normally artefacts, and keeping both would double-render the same text.
+        analysis["text_blocks"] = ocr_blocks
+        analysis["ocr_applied"] = True
+        return ocr_blocks, None
+
+    @staticmethod
+    def _is_translatable_block(block: Dict[str, Any]) -> bool:
+        """Running heads and page numbers are layout furniture, not content."""
+        if SKIP_HEADERS_FOOTERS and (block.get("is_header") or block.get("is_footer")):
+            return False
+        return True
+
+    # ------------------------------------------------------------------ #
+    # Source language validation
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _verify_source_language(
+        sample_text: str, declared_src: str
+    ) -> Tuple[str, Optional[str]]:
+        """
+        Compares the declared source language against the script actually present.
+
+        Returns (source_language_to_use, optional_warning). Only a *script*
+        mismatch counts: declaring Marathi for Devanagari text is fine, while
+        declaring English for Devanagari text is not.
+        """
+        if not AUTO_DETECT_SOURCE_LANG or not sample_text.strip():
+            return declared_src, None
+
+        detected = detect_script_language(sample_text)
+        if not detected or script_of(detected) == script_of(declared_src):
+            return declared_src, None
+
+        warning = (
+            f"Declared source language {declared_src} "
+            f"({flores_to_display_name(declared_src)}) does not match the "
+            f"{script_of(detected)} script found in the document; using "
+            f"{detected} ({flores_to_display_name(detected)}) instead. "
+            f"Set AUTO_DETECT_SOURCE_LANG=0 to disable this correction."
+        )
+        logger.warning(warning)
+        return detected, warning
+
+    # ------------------------------------------------------------------ #
+    # Main entry point
+    # ------------------------------------------------------------------ #
 
     def process_document(
         self,
@@ -58,8 +161,7 @@ class DocumentProcessor:
 
         if not output_filename:
             timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-            tgt_readable = "Gujarati" if tgt in ["gu", "guj_Gujr"] else tgt
-            output_filename = f"{p.stem}_{tgt_readable}_{timestamp_str}.pdf"
+            output_filename = f"{p.stem}_{flores_to_display_name(tgt)}_{timestamp_str}.pdf"
         output_path = OUTPUT_DIR / output_filename
 
         job_previews_dir = PREVIEWS_DIR / job_id
@@ -73,7 +175,12 @@ class DocumentProcessor:
         orig_doc = pymupdf.open(str(p))
 
         start_time = time.time()
+        total_elapsed = 0.0
         page_batch_size = max(1, PAGE_BATCH_SIZE)
+        warnings: List[str] = []
+        ocr_pages: List[int] = []
+        untranslated_pages: List[int] = []
+        source_verified = False
 
         try:
             for batch_start in range(0, total_pages, page_batch_size):
@@ -99,7 +206,17 @@ class DocumentProcessor:
                             logger.warning("Original preview error for page %d: %s", completed_count, oe)
 
                     analysis = self.analyzer.analyze_page(page, page_num=completed_count)
-                    text_blocks = analysis.get("text_blocks", [])
+                    page_blocks, warning = self._extract_page_blocks(page, analysis, completed_count)
+                    if warning:
+                        warnings.append(warning)
+                        untranslated_pages.append(completed_count)
+                    if analysis.get("ocr_applied"):
+                        ocr_pages.append(completed_count)
+
+                    # Headers and footers stay in the original language, so they
+                    # are excluded from translation but kept for redaction-free
+                    # passthrough.
+                    text_blocks = [b for b in page_blocks if self._is_translatable_block(b)]
                     cleaned_texts = [clean_ocr_text(b["text"]) for b in text_blocks]
 
                     batch_pages_data.append({
@@ -113,6 +230,23 @@ class DocumentProcessor:
 
                     all_batch_texts.extend(cleaned_texts)
                     batch_text_counts.append(len(cleaned_texts))
+
+                # 1b. Validate the declared source language once, against real text
+                if not source_verified and all_batch_texts:
+                    sample = " ".join(all_batch_texts[:40])[:4000]
+                    corrected_src, lang_warning = self._verify_source_language(sample, src)
+                    if lang_warning:
+                        warnings.append(lang_warning)
+                    if corrected_src != src:
+                        src = corrected_src
+                        mongo_db.update_job_progress(
+                            job_id=job_id,
+                            completed_pages=batch_start,
+                            total_pages=total_pages,
+                            src_lang=src,
+                            warnings=warnings,
+                        )
+                    source_verified = True
 
                 # 2. Parallel Batch Translate ALL blocks across all pages in this window in one GPU pass
                 translated_batch_texts = []
@@ -153,8 +287,8 @@ class DocumentProcessor:
                     try:
                         rendered_pix = page.get_pixmap(dpi=150)
                         rendered_pix.save(str(rendered_preview_path))
-                    except Exception as re:
-                        logger.warning("Rendered preview error for page %d: %s", p_num, re)
+                    except Exception as preview_err:
+                        logger.warning("Rendered preview error for page %d: %s", p_num, preview_err)
 
                     # Build percentage-scaled bounding boxes for interactive canvas overlay
                     p_width = max(1.0, page.rect.width)
@@ -172,7 +306,9 @@ class DocumentProcessor:
                             "original_text": b.get("text", ""),
                             "translated_text": b.get("translated_text", ""),
                             "type": "header" if b.get("is_header") else ("table" if b.get("is_table") else "text"),
-                            "confidence": 99.4
+                            "source": "ocr" if b.get("is_ocr") else "native",
+                            # OCR confidence is measured; native text extraction is exact.
+                            "confidence": round(b.get("ocr_confidence", 1.0) * 100, 1),
                         })
 
                     page_trans_text = "\n\n".join([b.get("translated_text", "") for b in translated_blocks if b.get("translated_text")])
@@ -186,6 +322,8 @@ class DocumentProcessor:
                         "translated_text": page_trans_text,
                         "original_text": page_orig_text,
                         "blocks": formatted_blocks,
+                        "is_scanned": bool(p_data["analysis"].get("is_scanned")),
+                        "ocr_applied": bool(p_data["analysis"].get("ocr_applied")),
                         "rendered_image_url": f"/api/jobs/{job_id}/pages/{p_num}/rendered",
                         "original_image_url": f"/api/jobs/{job_id}/pages/{p_num}/original"
                     }
@@ -220,52 +358,84 @@ class DocumentProcessor:
                         latest_translated_text=page_trans_text[:1500],
                         latest_blocks=formatted_blocks[:40],
                         latest_page_image=f"/api/jobs/{job_id}/pages/{p_num}/rendered",
-                        output_file=str(output_path)
+                        output_file=str(output_path),
+                        warnings=warnings or None,
                     )
 
-                # Incremental Checkpoint: save progress after each multi-page batch
-                checkpoint_temp = output_path.with_suffix(".tmp.pdf")
-                try:
-                    if checkpoint_temp.exists():
-                        checkpoint_temp.unlink()
-                    doc.save(str(checkpoint_temp), garbage=3, deflate=True)
-                    if output_path.exists():
-                        output_path.unlink()
-                    shutil.move(str(checkpoint_temp), str(output_path))
-                    logger.info("Batch checkpoint saved to: %s (%d/%d pages)", output_path, batch_end, total_pages)
-                except Exception as ce:
-                    logger.warning("Checkpoint save non-critical warning: %s", ce)
+                # Incremental Checkpoint: save progress periodically
+                is_last_batch = (batch_end == total_pages)
+                should_checkpoint = is_last_batch or (batch_end % 20 == 0) or (batch_end <= page_batch_size)
+                if should_checkpoint:
+                    checkpoint_temp = output_path.with_suffix(".tmp.pdf")
+                    try:
+                        if checkpoint_temp.exists():
+                            checkpoint_temp.unlink()
+                        # Fast save without deflate on intermediate checkpoints; full compression on final
+                        doc.save(str(checkpoint_temp), garbage=3 if is_last_batch else 0, deflate=is_last_batch)
+                        if output_path.exists():
+                            output_path.unlink()
+                        shutil.move(str(checkpoint_temp), str(output_path))
+                        logger.info("Batch checkpoint saved to: %s (%d/%d pages)", output_path, batch_end, total_pages)
+                    except Exception as ce:
+                        logger.warning("Checkpoint save non-critical warning: %s", ce)
 
-            # Final check and save
-            if not output_path.exists():
-                checkpoint_temp = output_path.with_suffix(".tmp.pdf")
+            # Final check and save with full garbage collection and deflate compression
+            checkpoint_temp = output_path.with_suffix(".tmp.pdf")
+            try:
                 if checkpoint_temp.exists():
                     checkpoint_temp.unlink()
                 doc.save(str(checkpoint_temp), garbage=3, deflate=True)
                 if output_path.exists():
                     output_path.unlink()
                 shutil.move(str(checkpoint_temp), str(output_path))
-            
-            doc.close()
+            except Exception as fe:
+                logger.warning("Final save non-critical warning: %s", fe)
+
             total_elapsed = round(time.time() - start_time, 2)
             logger.info("Job %s completed in %s seconds. Output saved to %s", job_id, total_elapsed, output_path)
 
+            if untranslated_pages:
+                logger.error(
+                    "Job %s: %d page(s) were copied WITHOUT translation: %s",
+                    job_id, len(untranslated_pages), untranslated_pages,
+                )
+
             mongo_db.complete_job(job_id, str(output_path))
+            if warnings:
+                mongo_db.update_job_progress(
+                    job_id=job_id,
+                    completed_pages=total_pages,
+                    total_pages=total_pages,
+                    status="completed",
+                    warnings=warnings,
+                )
 
             return {
                 "job_id": job_id,
                 "status": "completed",
                 "total_pages": total_pages,
-                "elapsed_seconds": elapsed,
+                "elapsed_seconds": total_elapsed,
                 "output_pdf": str(output_path),
                 "output_filename": output_filename,
                 "src_lang": src,
-                "tgt_lang": tgt
+                "tgt_lang": tgt,
+                "ocr_pages": ocr_pages,
+                "untranslated_pages": untranslated_pages,
+                "warnings": warnings,
             }
 
         except Exception as e:
             logger.error("Job %s failed with error: %s", job_id, e, exc_info=True)
             mongo_db.fail_job(job_id, str(e))
-            raise e
+            raise
+        finally:
+            # Both handles must close on every path, or Windows keeps a lock on
+            # the uploaded PDF and it cannot be cleaned up.
+            for handle in (doc, orig_doc):
+                try:
+                    handle.close()
+                except Exception:
+                    pass
+
 
 document_processor = DocumentProcessor()

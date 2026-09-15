@@ -7,6 +7,7 @@ import {
   ShieldCheck, 
   Home, 
   LogOut, 
+  LogIn,
   Sparkles, 
   Globe2, 
   ChevronRight, 
@@ -267,8 +268,8 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
             <RefreshCw size={11} style={{ opacity: 0.6, animation: isLoading ? 'spin 1s linear infinite' : 'none' }} />
           </div>
 
-          {/* User Profile Card */}
-          {user && (
+          {/* User Profile Card / Guest Mode Card */}
+          {user ? (
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -325,6 +326,30 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
                 style={{ color: '#ef4444', padding: '4px', flexShrink: 0 }}
               >
                 <LogOut size={15} />
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              padding: '8px 10px',
+              borderRadius: '10px',
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              boxShadow: 'var(--shadow-xs)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a' }}>Guest Mode</span>
+                <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 600 }}>Free Translation</span>
+              </div>
+              <button
+                onClick={() => handleNavClick('login')}
+                className="btn btn-primary btn-sm"
+                style={{ width: '100%', justifyContent: 'center', fontSize: '0.78rem', padding: '5px 8px', gap: '5px', fontWeight: 600 }}
+              >
+                <LogIn size={13} />
+                <span>Sign In to Save History</span>
               </button>
             </div>
           )}

@@ -97,8 +97,40 @@ CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", "512"))
 # High-Performance Parallel Batching and Beam Configuration
 # Greedy decoding (num_beams=1) runs ~5x faster with virtually identical BLEU score
 NUM_BEAMS = int(os.getenv("NEXUS_NUM_BEAMS", "1"))
-# Parallel batch size for GPU inference (16 chunks in parallel per pass)
-PARALLEL_BATCH_SIZE = int(os.getenv("PARALLEL_BATCH_SIZE", "16"))
+# Parallel batch size for GPU inference (24 chunks in parallel per pass)
+PARALLEL_BATCH_SIZE = int(os.getenv("PARALLEL_BATCH_SIZE", "24"))
 # Number of pages to process together in parallel multi-page batches
-PAGE_BATCH_SIZE = int(os.getenv("PAGE_BATCH_SIZE", "4"))
+PAGE_BATCH_SIZE = int(os.getenv("PAGE_BATCH_SIZE", "6"))
+
+# Layout reconstruction: font fitting bounds for translated text.
+# Translated Indic/CJK text is typically 30-60% longer than the English source,
+# so blocks are fitted by growing the box into free space first, then shrinking
+# the font down to LAYOUT_FONT_MIN_SIZE.
+LAYOUT_FONT_MIN_SIZE = float(os.getenv("LAYOUT_FONT_MIN_SIZE", "5.0"))
+LAYOUT_FONT_MAX_SIZE = float(os.getenv("LAYOUT_FONT_MAX_SIZE", "18.0"))
+LAYOUT_FONT_STEP = float(os.getenv("LAYOUT_FONT_STEP", "0.5"))
+# Fraction of a block's own height it may grow downward into verified empty space.
+LAYOUT_MAX_BOX_GROWTH = float(os.getenv("LAYOUT_MAX_BOX_GROWTH", "0.6"))
+
+# OCR: DPI used to rasterize scanned pages before recognition. 300 is the
+# standard floor for reliable text recognition on book scans.
+OCR_RENDER_DPI = int(os.getenv("OCR_RENDER_DPI", "300"))
+# Drop OCR results below this confidence; they are usually scan noise.
+OCR_MIN_CONFIDENCE = float(os.getenv("OCR_MIN_CONFIDENCE", "0.5"))
+# Preferred OCR engine: "auto", "paddle", "tesseract" (pytesseract) or "pymupdf".
+OCR_ENGINE = os.getenv("OCR_ENGINE", "auto").lower()
+
+# Skip running headers and footers (page numbers, running titles) through the
+# translation model. They are detected by position in the page analyzer.
+SKIP_HEADERS_FOOTERS = os.getenv("SKIP_HEADERS_FOOTERS", "1") not in ("0", "false", "False")
+
+# Compare the declared source language against the script actually found in the
+# document, and correct it when they contradict. Guards against a Hindi PDF
+# being submitted as src_lang=en, which makes IndicTrans2 hallucinate.
+AUTO_DETECT_SOURCE_LANG = os.getenv("AUTO_DETECT_SOURCE_LANG", "1") not in ("0", "false", "False")
+
+# Route distant Indic<->Indic pairs through English (Tamil -> English -> Gujarati)
+# instead of the direct indic-indic model. "auto" pivots only when the direct
+# model is not present on disk; "1" always pivots; "0" never does.
+INDIC_PIVOT_VIA_ENGLISH = os.getenv("INDIC_PIVOT_VIA_ENGLISH", "auto").lower()
 

@@ -27,11 +27,8 @@ function AppContent() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  // Default view for unauthenticated users is Register
-  const [currentView, setCurrentView] = useState(() => {
-    const savedUser = localStorage.getItem('nexus_ocr_user');
-    return savedUser ? 'landing' : 'register';
-  });
+  // Default view is Home Overview ('landing') so anyone can translate right away without login
+  const [currentView, setCurrentView] = useState('landing');
 
   const [prefilledEmail, setPrefilledEmail] = useState('');
   const [showRegSuccessBanner, setShowRegSuccessBanner] = useState(false);
@@ -76,8 +73,8 @@ function AppContent() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc' }}>
       
-      {/* 1. STANDING LEFT SIDEBAR (Rendered when User is Logged In / Main App Views) */}
-      {!isAuthView && user && (
+      {/* 1. STANDING LEFT SIDEBAR (Rendered on all Main App Views for guests and logged-in users) */}
+      {!isAuthView && (
         <Sidebar
           currentView={currentView}
           setCurrentView={setCurrentView}
@@ -148,7 +145,7 @@ function AppContent() {
         )}
 
         {/* Mobile Header Bar (Only on small viewports when sidebar is collapsed) */}
-        {!isAuthView && user && (
+        {!isAuthView && (
           <div style={{
             height: '60px',
             borderBottom: '1px solid #e2e8f0',
@@ -216,7 +213,7 @@ function AppContent() {
 
           {/* Extraction History */}
           {currentView === 'history' && (
-            <HistoryPage setCurrentView={setCurrentView} />
+            <HistoryPage setCurrentView={setCurrentView} user={user} />
           )}
 
           {/* Developer REST API & Docs */}

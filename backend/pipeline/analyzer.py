@@ -47,24 +47,87 @@ class PDFStructureAnalyzer:
         try:
             tabs = page.find_tables()
             for tab in tabs.tables:
+                # extract() walks the whole table, so call it once per table
+                # rather than once per cell.
+                rows = tab.extract()
+                cells = []
+                for r, row in enumerate(tab.cells):
+                    for c, cell_bbox in enumerate(row):
+                        if not cell_bbox:
+                            continue
+                        text = ""
+                        if r < len(rows) and c < len(rows[r]):
+                            text = rows[r][c] or ""
+                        cells.append({
+                            "row": r,
+                            "col": c,
+                            "bbox": list(cell_bbox),
+                            "text": text,
+                        })
                 tables_data.append({
                     "bbox": list(tab.bbox),
                     "rows": tab.row_count,
                     "cols": tab.col_count,
-                    "cells": [
-                        {
-                            "row": r,
-                            "col": c,
-                            "bbox": list(cell_bbox),
-                            "text": tab.extract()[r][c] if r < len(tab.extract()) and c < len(tab.extract()[r]) else ""
-                        }
-                        for r, row in enumerate(tab.cells)
-                        for c, cell_bbox in enumerate(row) if cell_bbox
-                    ]
+                    "cells": cells,
                 })
         except Exception as e:
             logger.debug("Table detection warning: %s", e)
         return tables_data
+
+    @staticmethod
+    def _mark_table_blocks(
+        text_blocks: List[Dict[str, Any]], tables: List[Dict[str, Any]]
+    ) -> None:
+        """
+        Flags text blocks that live inside a detected table.
+
+        Table cell text is part of get_text("dict") output, so it is translated
+        along with body text. The flag lets the reconstructor keep such blocks
+        inside their cell instead of reflowing them as a paragraph, and lets the
+        frontend label them.
+        """
+        if not tables:
+            for block in text_blocks:
+                block["is_table"] = False
+            return
+
+        table_rects = [pymupdf.Rect(t["bbox"]) for t in tables if t.get("bbox")]
+        cell_rects = [
+            pymupdf.Rect(cell["bbox"])
+            for table in tables
+            for cell in table.get("cells", [])
+            if cell.get("bbox")
+        ]
+
+        for block in text_blocks:
+            rect = pymupdf.Rect(block["bbox"])
+            area = abs(rect.get_area())
+            block["is_table"] = False
+            block["cell_bbox"] = None
+            if area <= 0:
+                continue
+
+            # A block belongs to a table when most of it sits inside the table.
+            for table_rect in table_rects:
+                overlap = abs((rect & table_rect).get_area())
+                if overlap / area > 0.6:
+                    block["is_table"] = True
+                    break
+
+            if not block["is_table"]:
+                continue
+
+            # Pin it to the tightest containing cell so translated text can be
+            # re-rendered within the cell's own geometry.
+            best, best_area = None, None
+            for cell_rect in cell_rects:
+                if abs((rect & cell_rect).get_area()) / area <= 0.6:
+                    continue
+                cell_area = abs(cell_rect.get_area())
+                if best_area is None or cell_area < best_area:
+                    best, best_area = cell_rect, cell_area
+            if best is not None:
+                block["cell_bbox"] = [best.x0, best.y0, best.x1, best.y1]
 
     @staticmethod
     def analyze_page(page: pymupdf.Page, page_num: int) -> Dict[str, Any]:
@@ -142,6 +205,7 @@ class PDFStructureAnalyzer:
                 })
 
         tables = PDFStructureAnalyzer.extract_tables(page)
+        PDFStructureAnalyzer._mark_table_blocks(text_blocks, tables)
 
         return {
             "page_num": page_num,

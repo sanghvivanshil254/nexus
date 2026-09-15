@@ -11,21 +11,28 @@ import {
   Calendar, 
   Trash2,
   Eye,
-  X
+  X,
+  Lock,
+  LogIn
 } from 'lucide-react';
 import { EXTRACTION_HISTORY_SEED, SAMPLE_DOCUMENTS } from '../../data/sampleDocuments';
 import { useToast } from '../../components/Toast';
 import { nexusApi } from '../../services/nexusApi';
 
-export const HistoryPage = ({ setCurrentView }) => {
+export const HistoryPage = ({ setCurrentView, user }) => {
   const { addToast } = useToast();
   const [historyList, setHistoryList] = useState(EXTRACTION_HISTORY_SEED);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLangFilter, setSelectedLangFilter] = useState('ALL');
   const [previewItem, setPreviewItem] = useState(null);
 
-  // Sync real translation jobs from localStorage & backend
+  // Sync real translation jobs from localStorage & backend (only for authenticated users)
   useEffect(() => {
+    if (!user) {
+      setHistoryList(EXTRACTION_HISTORY_SEED);
+      return;
+    }
+
     const localJobs = nexusApi.getLocalJobs();
     if (localJobs && localJobs.length > 0) {
       const mappedJobs = localJobs.map((job) => ({
@@ -48,7 +55,7 @@ export const HistoryPage = ({ setCurrentView }) => {
         return [...newOnes, ...prev];
       });
     }
-  }, []);
+  }, [user]);
 
   const filteredHistory = historyList.filter(item => {
     const matchesSearch = item.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -98,6 +105,64 @@ export const HistoryPage = ({ setCurrentView }) => {
           <span>Export Audit Log</span>
         </button>
       </div>
+
+      {/* Guest Mode History Notice */}
+      {!user && (
+        <div style={{
+          background: 'linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)',
+          border: '1px solid #bfdbfe',
+          borderRadius: '14px',
+          padding: '1.25rem 1.5rem',
+          marginBottom: '1.75rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '1rem',
+          boxShadow: '0 2px 8px rgba(37, 99, 235, 0.05)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <Lock size={20} />
+            </div>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
+                Account Required to Save Translation History
+              </h4>
+              <p style={{ margin: '3px 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+                You can freely translate documents in OCR Studio without logging in. To save, audit, and export your translation history across sessions, please sign in.
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => setCurrentView('login')}
+              className="btn btn-primary btn-sm"
+              style={{ fontWeight: 600, padding: '7px 14px', gap: '6px' }}
+            >
+              <LogIn size={14} />
+              <span>Sign In</span>
+            </button>
+            <button
+              onClick={() => setCurrentView('register')}
+              className="btn btn-secondary btn-sm"
+              style={{ fontWeight: 600, padding: '7px 14px' }}
+            >
+              <span>Create Account</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Search & Filter Toolbar */}
       <div style={{

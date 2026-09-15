@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Tuple, Set
 
 from backend.config import (
+    INDIC_PIVOT_VIA_ENGLISH,
     INDICTRANS_REGISTRY,
     MODEL_SIZE_TIER,
     NLLB_REGISTRY,
@@ -196,6 +197,35 @@ def normalize_lang_code(code: str) -> str:
             return v
     return code
 
+
+def _build_display_names() -> Dict[str, str]:
+    """
+    Inverts LANG_CODE_MAP into Flores tag -> human-readable English name.
+    Only the spelled-out aliases are used as names, never the 2/3-letter codes.
+    """
+    names: Dict[str, str] = {}
+    for alias, flores in LANG_CODE_MAP.items():
+        if len(alias) <= 3:
+            continue  # "gu", "guj" are codes, not names
+        pretty = alias.replace("_", " ").title()
+        # Keep the shortest spelled-out alias: "Odia" over "Oriya".
+        if flores not in names or len(pretty) < len(names[flores]):
+            names[flores] = pretty
+    return names
+
+
+LANGUAGE_DISPLAY_NAMES: Dict[str, str] = _build_display_names()
+
+
+def flores_to_display_name(flores_code: str) -> str:
+    """
+    Human-readable language name for filenames and UI labels
+    ('guj_Gujr' -> 'Gujarati'). Falls back to the tag itself when unknown.
+    """
+    if not flores_code:
+        return "Unknown"
+    return LANGUAGE_DISPLAY_NAMES.get(flores_code, flores_code)
+
 def flores_to_iso(flores_code: str) -> str:
     """Converts a Flores-200 tag (e.g. 'eng_Latn') to 2-letter ISO ('en')."""
     return FLORES_TO_ISO_MAP.get(flores_code, flores_code[:2].lower())
@@ -321,6 +351,36 @@ class ModelRouter:
             tier=active_tier,
             is_offline_ready=local_dir.exists() and any(local_dir.iterdir()),
         )
+
+def should_pivot_via_english(src_lang: str, tgt_lang: str) -> bool:
+    """
+    Whether an Indic->Indic pair should be routed as src -> English -> tgt.
+
+    Controlled by INDIC_PIVOT_VIA_ENGLISH:
+      "auto" (default) - pivot only when the direct indic-indic model is absent
+                         from disk, so a missing download degrades instead of
+                         crashing at load time.
+      "1" / "true"     - always pivot.
+      "0" / "false"    - never pivot; use the direct model.
+
+    Pivoting costs two model passes and loses some quality to double
+    translation, so it is deliberately not the default for available models.
+    """
+    src = normalize_lang_code(src_lang)
+    tgt = normalize_lang_code(tgt_lang)
+    if not (is_indic_language(src) and is_indic_language(tgt)) or src == tgt:
+        return False
+
+    mode = INDIC_PIVOT_VIA_ENGLISH
+    if mode in ("0", "false", "no", "off"):
+        return False
+    if mode in ("1", "true", "yes", "on", "always"):
+        return True
+
+    # "auto": pivot when the direct model is not downloaded.
+    decision = ModelRouter.route(src, tgt)
+    return decision.direction_key == "indic-indic" and not decision.is_offline_ready
+
 
 def detect_script_language(text: str) -> Optional[str]:
     """
