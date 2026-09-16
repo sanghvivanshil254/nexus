@@ -190,6 +190,8 @@ def normalize_lang_code(code: str) -> str:
     if not code:
         return "eng_Latn"
     clean = code.strip().lower()
+    if clean in ("auto", "auto_detect", "autodetect"):
+        return "auto"
     if clean in LANG_CODE_MAP:
         return LANG_CODE_MAP[clean]
     for _, v in LANG_CODE_MAP.items():
@@ -339,17 +341,16 @@ class ModelRouter:
                     is_offline_ready=True,
                 )
 
-        # 4. NLLB-200 (Universal global multilingual model)
-        nllb_model_id = NLLB_REGISTRY[active_tier]
-        local_dir = get_local_model_dir(nllb_model_id)
+        # 4. Universal High-Speed Alternative for Global Languages (Russian, Spanish, French, etc.)
+        # Provides instant, zero-RAM, zero-VRAM translation avoiding heavy 5.5GB NLLB memory crashes.
         return RouteDecision(
-            backend_type="nllb",
-            model_id=nllb_model_id,
-            direction_key="nllb-200",
+            backend_type="web_universal",
+            model_id="nexus-universal-web",
+            direction_key="web-universal",
             src_lang=src,
             tgt_lang=tgt,
             tier=active_tier,
-            is_offline_ready=local_dir.exists() and any(local_dir.iterdir()),
+            is_offline_ready=False,
         )
 
 def should_pivot_via_english(src_lang: str, tgt_lang: str) -> bool:

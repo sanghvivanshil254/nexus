@@ -17,19 +17,29 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { useBackendStatus } from '../hooks/useBackendStatus';
+import { AnimatedHamburger } from './AnimatedHamburger';
 
-export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileOpen, setIsMobileOpen }) => {
+export const Sidebar = ({ 
+  currentView, 
+  setCurrentView, 
+  user, 
+  onLogout, 
+  isMobileOpen, 
+  setIsMobileOpen,
+  isCollapsed = false,
+  setIsCollapsed
+}) => {
   const { isConnected, device, modelTier, languageCount, recheck, isLoading } = useBackendStatus();
 
   const navItems = [
-    { id: 'landing', label: 'Home Overview', icon: Home, badge: null },
-    { id: 'dashboard', label: 'OCR Studio', icon: FileSearch, badge: 'Active' },
-    { id: 'batch', label: 'Batch Queue', icon: Layers, badge: '8 GPU' },
-    { id: 'history', label: 'Extraction History', icon: History, badge: null },
-    { id: 'apidocs', label: 'API & Dev Docs', icon: Code2, badge: null },
+    { id: 'landing', label: 'Home Overview', icon: Home },
+    { id: 'dashboard', label: 'OCR Studio', icon: FileSearch },
+    { id: 'batch', label: 'Batch Queue', icon: Layers },
+    { id: 'history', label: 'Extraction History', icon: History },
+    { id: 'apidocs', label: 'API & Dev Docs', icon: Code2 },
     // Only show Admin Console if the user is an Admin AND not on the Home Overview page
     ...(user?.isAdmin && currentView !== 'landing' ? [
-      { id: 'admin', label: 'Admin Console', icon: ShieldCheck, badge: 'ADMIN', adminOnly: true }
+      { id: 'admin', label: 'Admin Console', icon: ShieldCheck, adminOnly: true }
     ] : [])
   ];
 
@@ -58,9 +68,9 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
 
       {/* Standing Left Sidebar */}
       <aside
-        className={`standing-sidebar ${isMobileOpen ? 'mobile-open' : ''}`}
+        className={`standing-sidebar ${isMobileOpen ? 'mobile-open' : ''} ${isCollapsed ? 'collapsed' : ''}`}
         style={{
-          width: '260px',
+          width: isCollapsed ? '76px' : '260px',
           height: '100vh',
           position: 'sticky',
           top: 0,
@@ -75,78 +85,103 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
         }}
       >
         {/* Top: Brand Header */}
-        <div style={{ padding: '1.25rem 1.25rem 1rem', borderBottom: '1px solid #f1f5f9' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            
-            <div 
-              onClick={() => handleNavClick('dashboard')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                cursor: 'pointer',
-                userSelect: 'none'
-              }}
-            >
-              <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
-                color: '#ffffff',
-                flexShrink: 0
-              }}>
+        <div style={{ padding: isCollapsed ? '1.25rem 0.5rem 1rem' : '1.25rem 1.25rem 1rem', borderBottom: '1px solid #f1f5f9' }}>
+          {isCollapsed ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+              <AnimatedHamburger
+                isOpen={false}
+                onClick={() => setIsCollapsed && setIsCollapsed(false)}
+                title="Expand sidebar"
+              />
+              <div 
+                onClick={() => handleNavClick('dashboard')}
+                title="NexusOCR Home"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                  color: '#ffffff',
+                  cursor: 'pointer'
+                }}
+              >
                 <FileSearch size={19} strokeWidth={2.4} />
               </div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div 
+                onClick={() => handleNavClick('dashboard')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  cursor: 'pointer',
+                  userSelect: 'none'
+                }}
+              >
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                  color: '#ffffff',
+                  flexShrink: 0
+                }}>
+                  <FileSearch size={19} strokeWidth={2.4} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ 
+                      fontFamily: 'var(--font-sans)', 
+                      fontSize: '1.15rem', 
+                      fontWeight: 800, 
+                      color: '#0f172a',
+                      letterSpacing: '-0.03em'
+                    }}>
+                      Nexus<span style={{ color: '#2563eb' }}>OCR</span>
+                    </span>
+                  </div>
                   <span style={{ 
-                    fontFamily: 'var(--font-sans)', 
-                    fontSize: '1.15rem', 
-                    fontWeight: 800, 
-                    color: '#0f172a',
-                    letterSpacing: '-0.03em'
+                    fontSize: '0.68rem', 
+                    color: '#64748b', 
+                    fontWeight: 500,
+                    display: 'block',
+                    marginTop: '-2px'
                   }}>
-                    Nexus<span style={{ color: '#2563eb' }}>OCR</span>
-                  </span>
-                  <span className="badge badge-primary" style={{ fontSize: '0.6rem', padding: '0.1rem 0.35rem' }}>
-                    v2.4
+                    Multilingual AI Pipeline
                   </span>
                 </div>
-                <span style={{ 
-                  fontSize: '0.68rem', 
-                  color: '#64748b', 
-                  fontWeight: 500,
-                  display: 'block',
-                  marginTop: '-2px'
-                }}>
-                  Multilingual AI Pipeline
-                </span>
               </div>
+
+              {/* Animated Hamburger Toggle Button */}
+              <AnimatedHamburger
+                isOpen={isMobileOpen || !isCollapsed}
+                onClick={() => {
+                  if (window.innerWidth <= 900) {
+                    if (setIsMobileOpen) setIsMobileOpen(false);
+                  } else {
+                    if (setIsCollapsed) setIsCollapsed(!isCollapsed);
+                  }
+                }}
+                title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              />
             </div>
-
-            {/* Mobile Close Button */}
-            {setIsMobileOpen && (
-              <button
-                onClick={() => setIsMobileOpen(false)}
-                className="btn btn-ghost btn-sm mobile-close-btn"
-                style={{ padding: '4px', color: '#64748b' }}
-              >
-                <X size={18} />
-              </button>
-            )}
-
-          </div>
+          )}
         </div>
 
         {/* Middle: Standing Vertical Navigation Items */}
-        <div style={{ flex: 1, padding: '1rem 0.75rem', overflowY: 'auto' }}>
+        <div style={{ flex: 1, padding: isCollapsed ? '1rem 0.4rem' : '1rem 0.75rem', overflowY: 'auto' }}>
           
-          <div style={{ padding: '0 0.5rem 0.5rem', fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          <div className="sidebar-hide-collapsed" style={{ padding: '0 0.5rem 0.5rem', fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Pipeline Modules
           </div>
 
@@ -160,11 +195,13 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
+                  className="sidebar-item-btn"
+                  title={item.label}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '9px 12px',
+                    justifyContent: isCollapsed ? 'center' : 'space-between',
+                    padding: isCollapsed ? '9px 0' : '9px 12px',
                     borderRadius: '10px',
                     border: 'none',
                     background: isActive 
@@ -177,7 +214,7 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
                     fontSize: '0.85rem',
                     cursor: 'pointer',
                     width: '100%',
-                    textAlign: 'left',
+                    textAlign: isCollapsed ? 'center' : 'left',
                     transition: 'all 0.15s ease',
                     boxShadow: isActive && !isAdmin ? '0 1px 3px rgba(37, 99, 235, 0.1)' : 'none'
                   }}
@@ -188,7 +225,7 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
                     if (!isActive) e.currentTarget.style.background = 'transparent';
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: isCollapsed ? '0' : '10px' }}>
                     <div style={{
                       width: '28px',
                       height: '28px',
@@ -206,11 +243,11 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
                     }}>
                       <Icon size={15} />
                     </div>
-                    <span>{item.label}</span>
+                    <span className="sidebar-hide-collapsed">{item.label}</span>
                   </div>
 
                   {item.badge && (
-                    <span style={{
+                    <span className="sidebar-hide-collapsed" style={{
                       fontSize: '0.62rem',
                       fontWeight: 800,
                       padding: '1px 5px',
@@ -232,7 +269,7 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
         </div>
 
         {/* Bottom: User Profile & Status */}
-        <div style={{ padding: '0.85rem', borderTop: '1px solid #f1f5f9', background: '#fafbfc' }}>
+        <div style={{ padding: isCollapsed ? '0.65rem 0.35rem' : '0.85rem', borderTop: '1px solid #f1f5f9', background: '#fafbfc' }}>
           
           {/* Live Backend Connection Status Pill */}
           <div 
@@ -241,8 +278,8 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '6px 10px',
+              justifyContent: isCollapsed ? 'center' : 'space-between',
+              padding: isCollapsed ? '6px' : '6px 10px',
               borderRadius: '8px',
               background: isConnected ? '#ecfdf5' : '#f8fafc',
               border: `1px solid ${isConnected ? '#a7f3d0' : '#e2e8f0'}`,
@@ -263,9 +300,11 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
                 display: 'inline-block',
                 boxShadow: isConnected ? '0 0 6px rgba(16, 185, 129, 0.6)' : 'none'
               }} />
-              <span>{isConnected ? `Backend: ${device?.toUpperCase() || 'CPU'} (${languageCount} Langs)` : 'Backend: Standalone Demo'}</span>
+              <span className="sidebar-hide-collapsed">{isConnected ? `Backend: ${device?.toUpperCase() || 'CPU'} (${languageCount} Langs)` : 'Backend: Standalone Demo'}</span>
             </div>
-            <RefreshCw size={11} style={{ opacity: 0.6, animation: isLoading ? 'spin 1s linear infinite' : 'none' }} />
+            {!isCollapsed && (
+              <RefreshCw size={11} style={{ opacity: 0.6, animation: isLoading ? 'spin 1s linear infinite' : 'none' }} />
+            )}
           </div>
 
           {/* User Profile Card / Guest Mode Card */}
@@ -273,8 +312,8 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '6px 8px',
+              justifyContent: isCollapsed ? 'center' : 'space-between',
+              padding: isCollapsed ? '6px 0' : '6px 8px',
               borderRadius: '10px',
               background: '#ffffff',
               border: '1px solid #e2e8f0',
@@ -287,9 +326,9 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
                 style={{ 
                   display: 'flex', 
                   alignItems: 'center', 
-                  gap: '8px', 
+                  gap: isCollapsed ? '0' : '8px', 
                   cursor: user?.isAdmin ? 'pointer' : 'default', 
-                  flex: 1, 
+                  flex: isCollapsed ? 0 : 1, 
                   minWidth: 0 
                 }}
                 title={user?.isAdmin ? "Click to view Admin Console" : user?.name}
@@ -309,7 +348,7 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
                 }}>
                   {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                 </div>
-                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div className="sidebar-hide-collapsed" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', display: 'block', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {user.name.split(' ')[0]}
                   </span>
@@ -319,38 +358,65 @@ export const Sidebar = ({ currentView, setCurrentView, user, onLogout, isMobileO
                 </div>
               </div>
 
-              <button
-                onClick={onLogout}
-                className="btn btn-ghost btn-sm"
-                title="Sign Out"
-                style={{ color: '#ef4444', padding: '4px', flexShrink: 0 }}
-              >
-                <LogOut size={15} />
-              </button>
+              {!isCollapsed && (
+                <button
+                  onClick={onLogout}
+                  className="btn btn-ghost btn-sm"
+                  title="Sign Out"
+                  style={{ color: '#ef4444', padding: '4px', flexShrink: 0 }}
+                >
+                  <LogOut size={15} />
+                </button>
+              )}
             </div>
           ) : (
             <div style={{
-              padding: '8px 10px',
-              borderRadius: '10px',
+              padding: isCollapsed ? '6px 0' : '6px 10px',
+              borderRadius: '8px',
               background: '#ffffff',
               border: '1px solid #e2e8f0',
-              boxShadow: 'var(--shadow-xs)',
               display: 'flex',
-              flexDirection: 'column',
-              gap: '6px'
+              alignItems: 'center',
+              justifyContent: isCollapsed ? 'center' : 'space-between',
+              fontSize: '0.78rem'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a' }}>Guest Mode</span>
-                <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 600 }}>Free Translation</span>
-              </div>
-              <button
-                onClick={() => handleNavClick('login')}
-                className="btn btn-primary btn-sm"
-                style={{ width: '100%', justifyContent: 'center', fontSize: '0.78rem', padding: '5px 8px', gap: '5px', fontWeight: 600 }}
-              >
-                <LogIn size={13} />
-                <span>Sign In to Save History</span>
-              </button>
+              {isCollapsed ? (
+                <button
+                  onClick={() => handleNavClick('login')}
+                  title="Sign In"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#2563eb',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <LogIn size={16} />
+                </button>
+              ) : (
+                <>
+                  <span style={{ color: '#64748b', fontWeight: 500 }}>Guest Session</span>
+                  <button
+                    onClick={() => handleNavClick('login')}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#2563eb',
+                      fontWeight: 700,
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      padding: '2px 6px',
+                      borderRadius: '4px'
+                    }}
+                  >
+                    Sign In &rarr;
+                  </button>
+                </>
+              )}
             </div>
           )}
 

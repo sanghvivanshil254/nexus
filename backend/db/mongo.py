@@ -1,13 +1,16 @@
 import hashlib
 import time
+import contextvars
+import logging
 from typing import Optional, Dict, Any, List
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import PyMongoError, ConnectionFailure
-import logging
 
 from backend.config import MONGO_URI, DB_NAME, CACHE_COLLECTION, JOBS_COLLECTION
 
 logger = logging.getLogger("nexus.mongo")
+
+guest_context_var = contextvars.ContextVar("guest_context_var", default=False)
 
 class MongoDBManager:
     _instance = None
@@ -24,6 +27,8 @@ class MongoDBManager:
         self.cache_col = None
         self.jobs_col = None
         self.is_connected = False
+        self._guest_jobs: Dict[str, Dict[str, Any]] = {}
+        self._memory_jobs: Dict[str, Dict[str, Any]] = {}
         
         try:
             self.client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
@@ -49,8 +54,8 @@ class MongoDBManager:
         key = f"{model}:{src_lang}:{tgt_lang}:{text.strip()}"
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
-    def get_cached_translation(self, text: str, src_lang: str, tgt_lang: str, model: str) -> Optional[str]:
-        if not self.is_connected or not text.strip():
+    def get_cached_translation(self, text: str, src_lang: str, tgt_lang: str, model: str, is_guest: bool = False) -> Optional[str]:
+        if is_guest or guest_context_var.get() or not self.is_connected or not text.strip():
             return None
         try:
             hash_key = self.compute_hash(text, src_lang, tgt_lang, model)
@@ -61,8 +66,9 @@ class MongoDBManager:
             logger.error("Error reading cache: %s", e)
         return None
 
-    def set_cached_translation(self, text: str, translated_text: str, src_lang: str, tgt_lang: str, model: str):
-        if not self.is_connected or not text.strip():
+    def set_cached_translation(self, text: str, translated_text: str, src_lang: str, tgt_lang: str, model: str, is_guest: bool = False):
+        if is_guest or guest_context_var.get() or not self.is_connected or not text.strip():
+            # Guest mode does not write to the database
             return
         try:
             hash_key = self.compute_hash(text, src_lang, tgt_lang, model)
@@ -84,7 +90,8 @@ class MongoDBManager:
         except Exception as e:
             logger.error("Error setting cache: %s", e)
 
-    def create_job(self, job_id: str, filename: str, src_lang: str, tgt_lang: str, total_pages: int = 0) -> Dict[str, Any]:
+    def create_job(self, job_id: str, filename: str, src_lang: str, tgt_lang: str, total_pages: int = 0, is_guest: bool = False) -> Dict[str, Any]:
+        is_guest_mode = is_guest or job_id.startswith("guest_") or guest_context_var.get()
         job_doc = {
             "job_id": job_id,
             "filename": filename,
@@ -97,13 +104,61 @@ class MongoDBManager:
             "created_at": time.time(),
             "updated_at": time.time(),
             "error": None,
-            "output_file": None
+            "output_file": None,
+            "is_guest": is_guest_mode,
         }
+        if is_guest_mode:
+            # Strictly temporary in-memory storage (zero database connection/writes)
+            if job_id in self._guest_jobs:
+                self._guest_jobs[job_id].update({
+                    "filename": filename,
+                    "src_lang": src_lang,
+                    "tgt_lang": tgt_lang,
+                    "total_pages": total_pages if total_pages > 0 else self._guest_jobs[job_id].get("total_pages", 0),
+                    "updated_at": time.time(),
+                })
+            else:
+                self._guest_jobs[job_id] = job_doc
+            return self._guest_jobs[job_id]
+
         if self.is_connected:
             try:
-                self.jobs_col.insert_one(job_doc)
+                self.jobs_col.update_one(
+                    {"job_id": job_id},
+                    {
+                        "$set": {
+                            "job_id": job_id,
+                            "filename": filename,
+                            "src_lang": src_lang,
+                            "tgt_lang": tgt_lang,
+                            "total_pages": total_pages,
+                            "updated_at": time.time(),
+                            "is_guest": is_guest_mode,
+                        },
+                        "$setOnInsert": {
+                            "status": "pending",
+                            "progress": 0.0,
+                            "completed_pages": 0,
+                            "created_at": time.time(),
+                            "error": None,
+                            "output_file": None,
+                        }
+                    },
+                    upsert=True
+                )
             except Exception as e:
-                logger.error("Error creating job in Mongo: %s", e)
+                logger.error("Error creating/updating job in Mongo: %s", e)
+        else:
+            if job_id in self._memory_jobs:
+                self._memory_jobs[job_id].update({
+                    "filename": filename,
+                    "src_lang": src_lang,
+                    "tgt_lang": tgt_lang,
+                    "total_pages": total_pages if total_pages > 0 else self._memory_jobs[job_id].get("total_pages", 0),
+                    "updated_at": time.time(),
+                })
+            else:
+                self._memory_jobs[job_id] = job_doc
         return job_doc
 
     def update_job_progress(
@@ -119,8 +174,6 @@ class MongoDBManager:
         output_file: Optional[str] = None,
         **extra
     ):
-        if not self.is_connected:
-            return
         progress = (completed_pages / total_pages * 100) if total_pages > 0 else 0.0
         update_fields: Dict[str, Any] = {
             "status": status,
@@ -142,6 +195,16 @@ class MongoDBManager:
         for k, v in extra.items():
             if v is not None:
                 update_fields[k] = v
+
+        if job_id in self._guest_jobs:
+            self._guest_jobs[job_id].update(update_fields)
+            return
+
+        if not self.is_connected:
+            if job_id in self._memory_jobs:
+                self._memory_jobs[job_id].update(update_fields)
+            return
+
         try:
             self.jobs_col.update_one(
                 {"job_id": job_id},
@@ -151,49 +214,66 @@ class MongoDBManager:
             logger.error("Error updating job progress: %s", e)
 
     def complete_job(self, job_id: str, output_file: str):
-        if not self.is_connected:
+        fields = {
+            "status": "completed",
+            "progress": 100.0,
+            "output_file": output_file,
+            "completed_at": time.time(),
+            "updated_at": time.time()
+        }
+        if job_id in self._guest_jobs:
+            self._guest_jobs[job_id].update(fields)
             return
+
+        if not self.is_connected:
+            if job_id in self._memory_jobs:
+                self._memory_jobs[job_id].update(fields)
+            return
+
         try:
             self.jobs_col.update_one(
                 {"job_id": job_id},
-                {
-                    "$set": {
-                        "status": "completed",
-                        "progress": 100.0,
-                        "output_file": output_file,
-                        "completed_at": time.time(),
-                        "updated_at": time.time()
-                    }
-                }
+                {"$set": fields}
             )
         except Exception as e:
             logger.error("Error completing job: %s", e)
 
     def fail_job(self, job_id: str, error_msg: str):
-        if not self.is_connected:
+        fields = {
+            "status": "failed",
+            "error": error_msg,
+            "updated_at": time.time()
+        }
+        if job_id in self._guest_jobs:
+            self._guest_jobs[job_id].update(fields)
             return
+
+        if not self.is_connected:
+            if job_id in self._memory_jobs:
+                self._memory_jobs[job_id].update(fields)
+            return
+
         try:
             self.jobs_col.update_one(
                 {"job_id": job_id},
-                {
-                    "$set": {
-                        "status": "failed",
-                        "error": error_msg,
-                        "updated_at": time.time()
-                    }
-                }
+                {"$set": fields}
             )
         except Exception as e:
             logger.error("Error failing job: %s", e)
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        if job_id.startswith("guest_") or job_id in self._guest_jobs:
+            return dict(self._guest_jobs[job_id]) if job_id in self._guest_jobs else None
         if not self.is_connected:
-            return None
+            return self._memory_jobs.get(job_id)
         try:
-            return self.jobs_col.find_one({"job_id": job_id}, {"_id": 0})
+            doc = self.jobs_col.find_one({"job_id": job_id}, {"_id": 0})
+            if doc:
+                return doc
+            return None
         except Exception as e:
             logger.error("Error fetching job: %s", e)
-            return None
+            return self._memory_jobs.get(job_id)
 
 # Singleton instance
 mongo_db = MongoDBManager()

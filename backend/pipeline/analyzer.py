@@ -187,10 +187,61 @@ class PDFStructureAnalyzer:
                     
                     avg_font_size = sum(font_sizes) / len(font_sizes) if font_sizes else 10.0
                     
+                    all_spans = [s for l in block_lines for s in l["spans"] if s["text"].strip()]
+                    
+                    # Dynamic typography metadata extraction from PyMuPDF flags & font names
+                    is_serif = any(
+                        bool(s.get("flags", 0) & 4) or 
+                        any(k in s.get("font", "").lower() for k in ["serif", "times", "georgia", "cambria", "garamond", "minion", "roman", "palatino"])
+                        for s in all_spans
+                    )
+                    is_bold = any(
+                        bool(s.get("flags", 0) & 16) or 
+                        any(k in s.get("font", "").lower() for k in ["bold", "black", "heavy", "demi", "semibold"])
+                        for s in all_spans
+                    )
+                    is_italic = any(
+                        bool(s.get("flags", 0) & 2) or 
+                        any(k in s.get("font", "").lower() for k in ["italic", "oblique", "slanted"])
+                        for s in all_spans
+                    )
+                    
+                    # Dominant text color
+                    color_val = all_spans[0].get("color", 0) if all_spans else 0
+                    hex_color = f"#{color_val:06x}" if isinstance(color_val, int) and color_val > 0 else "#111111"
+
+                    # Dynamic Alignment Detection
+                    alignment = "left"
+                    block_w = bbox[2] - bbox[0]
+                    if len(block_lines) >= 2 and block_w > 0:
+                        rights = [l["bbox"][2] for l in block_lines[:-1]]
+                        # If right margins of non-terminal lines align closely to the block width, it's justified
+                        if rights and all(abs(r - bbox[2]) <= max(5.0, block_w * 0.06) for r in rights):
+                            alignment = "justify"
+                        else:
+                            # Check if lines are centered
+                            midpoints = [(l["bbox"][0] + l["bbox"][2]) / 2 for l in block_lines]
+                            block_mid = (bbox[0] + bbox[2]) / 2
+                            if midpoints and all(abs(m - block_mid) <= 8.0 for m in midpoints):
+                                alignment = "center"
+                    elif len(block_lines) == 1 and width > 0:
+                        # Check single line centering or right-alignment (e.g. titles/headings, RTL text, headers)
+                        l_mid = (block_lines[0]["bbox"][0] + block_lines[0]["bbox"][2]) / 2
+                        line_w = block_lines[0]["bbox"][2] - block_lines[0]["bbox"][0]
+                        if abs(l_mid - (width / 2)) <= 15.0 and line_w < width * 0.7:
+                            alignment = "center"
+                        elif (width - block_lines[0]["bbox"][2]) <= max(20.0, width * 0.08) and block_lines[0]["bbox"][0] > width * 0.3:
+                            alignment = "right"
+
                     text_blocks.append({
                         "bbox": bbox,
                         "text": full_text,
                         "avg_font_size": avg_font_size,
+                        "is_serif": is_serif,
+                        "is_bold": is_bold,
+                        "is_italic": is_italic,
+                        "color": hex_color,
+                        "alignment": alignment,
                         "is_header": is_header,
                         "is_footer": is_footer,
                         "lines": block_lines

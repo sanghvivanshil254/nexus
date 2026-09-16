@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ToastProvider, useToast } from './components/Toast';
 import { Sidebar } from './components/Sidebar';
 import { Footer } from './components/Footer';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Auth Pages
 import { RegisterPage } from './pages/Auth/RegisterPage';
@@ -17,6 +18,7 @@ import { ApiDocsPage } from './pages/Dashboard/ApiDocsPage';
 
 // Admin Console Page
 import { AdminDashboard } from './pages/Admin/AdminDashboard';
+import { AnimatedHamburger } from './components/AnimatedHamburger';
 
 // Icons for Auth Top Bar & Mobile Trigger
 import { FileSearch, Menu, UserPlus, LogIn } from 'lucide-react';
@@ -33,6 +35,7 @@ function AppContent() {
   const [prefilledEmail, setPrefilledEmail] = useState('');
   const [showRegSuccessBanner, setShowRegSuccessBanner] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Step 1: User registers -> Transition to Login
   const handleRegisterSuccess = (registeredData) => {
@@ -82,6 +85,8 @@ function AppContent() {
           onLogout={handleLogout}
           isMobileOpen={isMobileSidebarOpen}
           setIsMobileOpen={setIsMobileSidebarOpen}
+          isCollapsed={isSidebarCollapsed}
+          setIsCollapsed={setIsSidebarCollapsed}
         />
       )}
 
@@ -154,77 +159,77 @@ function AppContent() {
             alignItems: 'center',
             justifyContent: 'space-between'
           }} className="mobile-header-bar">
-            <button
-              onClick={() => setIsMobileSidebarOpen(true)}
-              className="btn btn-ghost btn-sm"
-              style={{ padding: '6px', color: '#0f172a' }}
-            >
-              <Menu size={22} />
-            </button>
+            <AnimatedHamburger
+              isOpen={isMobileSidebarOpen}
+              onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+              title={isMobileSidebarOpen ? "Close navigation" : "Open navigation"}
+            />
             <span style={{ fontFamily: 'var(--font-sans)', fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
               Nexus<span style={{ color: '#2563eb' }}>OCR</span>
             </span>
-            <div style={{ width: '32px' }} />
+            <div style={{ width: '36px' }} />
           </div>
         )}
 
         {/* Main View Content */}
         <main style={{ flex: 1 }}>
-          {/* Step 1: Register */}
-          {currentView === 'register' && (
-            <RegisterPage
-              onRegisterSuccess={handleRegisterSuccess}
-              setCurrentView={setCurrentView}
-            />
-          )}
+          <ErrorBoundary>
+            {/* Step 1: Register */}
+            {currentView === 'register' && (
+              <RegisterPage
+                onRegisterSuccess={handleRegisterSuccess}
+                setCurrentView={setCurrentView}
+              />
+            )}
 
-          {/* Step 2: Login */}
-          {currentView === 'login' && (
-            <LoginPage
-              onLoginSuccess={handleLoginSuccess}
-              setCurrentView={setCurrentView}
-              initialEmail={prefilledEmail}
-              registrationSuccessBanner={showRegSuccessBanner}
-            />
-          )}
+            {/* Step 2: Login */}
+            {currentView === 'login' && (
+              <LoginPage
+                onLoginSuccess={handleLoginSuccess}
+                setCurrentView={setCurrentView}
+                initialEmail={prefilledEmail}
+                registrationSuccessBanner={showRegSuccessBanner}
+              />
+            )}
 
-          {/* Forgot Password */}
-          {currentView === 'forgetpassword' && (
-            <ForgotPasswordPage
-              setCurrentView={setCurrentView}
-              onPasswordResetSuccess={handlePasswordResetSuccess}
-            />
-          )}
+            {/* Forgot Password */}
+            {currentView === 'forgetpassword' && (
+              <ForgotPasswordPage
+                setCurrentView={setCurrentView}
+                onPasswordResetSuccess={handlePasswordResetSuccess}
+              />
+            )}
 
-          {/* Step 3: Home Landing Page */}
-          {currentView === 'landing' && (
-            <LandingPage setCurrentView={setCurrentView} user={user} />
-          )}
+            {/* Step 3: Home Landing Page */}
+            {currentView === 'landing' && (
+              <LandingPage setCurrentView={setCurrentView} user={user} />
+            )}
 
-          {/* OCR Studio Workbench */}
-          {currentView === 'dashboard' && (
-            <OcrPipelineDashboard user={user} />
-          )}
+            {/* OCR Studio Workbench */}
+            {currentView === 'dashboard' && (
+              <OcrPipelineDashboard user={user} />
+            )}
 
-          {/* Batch Queue */}
-          {currentView === 'batch' && (
-            <BatchProcessor />
-          )}
+            {/* Batch Queue */}
+            {currentView === 'batch' && (
+              <BatchProcessor />
+            )}
 
-          {/* Extraction History */}
-          {currentView === 'history' && (
-            <HistoryPage setCurrentView={setCurrentView} user={user} />
-          )}
+            {/* Extraction History */}
+            {currentView === 'history' && (
+              <HistoryPage setCurrentView={setCurrentView} user={user} />
+            )}
 
-          {/* Developer REST API & Docs */}
-          {currentView === 'apidocs' && (
-            <ApiDocsPage user={user} />
-          )}
+            {/* Developer REST API & Docs */}
+            {currentView === 'apidocs' && (
+              <ApiDocsPage user={user} />
+            )}
 
-          {/* Dedicated Admin Console */}
-          {currentView === 'admin' && (
-            <AdminDashboard currentUser={user} />
-          )}
+            {/* Dedicated Admin Console */}
+            {currentView === 'admin' && (
+              <AdminDashboard currentUser={user} />
+            )}
+          </ErrorBoundary>
         </main>
 
         {/* Footer is only rendered on the Home Overview page, hidden on all other pages */}

@@ -91,6 +91,21 @@ SCRIPT_FONT_CANDIDATES: Dict[str, List[Path]] = {
              WINDOWS_FONTS / "calibri.ttf", WINDOWS_FONTS / "segoeui.ttf"],
 }
 
+# Serif candidates per script (best matching first)
+SCRIPT_SERIF_CANDIDATES: Dict[str, List[Path]] = {
+    "Latn": [WINDOWS_FONTS / "times.ttf", WINDOWS_FONTS / "georgia.ttf", FONTS_DIR / "NotoSerif-Regular.ttf", WINDOWS_FONTS / "cambria.ttc"],
+    "Cyrl": [WINDOWS_FONTS / "times.ttf", WINDOWS_FONTS / "georgia.ttf", FONTS_DIR / "NotoSerif-Regular.ttf"],
+    "Grek": [WINDOWS_FONTS / "times.ttf", WINDOWS_FONTS / "georgia.ttf"],
+    "Arab": [FONTS_DIR / "NotoNaskhArabic-Regular.ttf", WINDOWS_FONTS / "times.ttf", WINDOWS_FONTS / "arial.ttf"],
+    "Deva": [FONTS_DIR / "NotoSerifDevanagari-Regular.ttf", WINDOWS_FONTS / "Nirmala.ttf", FONTS_DIR / "NotoSansDevanagari-Regular.ttf"],
+    "Gujr": [FONTS_DIR / "NotoSerifGujarati-Regular.ttf", FONTS_DIR / "NotoSansGujarati-Regular.ttf", WINDOWS_FONTS / "shruti.ttf"],
+    "Beng": [FONTS_DIR / "NotoSerifBengali-Regular.ttf", FONTS_DIR / "NotoSansBengali-Regular.ttf", WINDOWS_FONTS / "vrinda.ttf"],
+    "Taml": [FONTS_DIR / "NotoSerifTamil-Regular.ttf", FONTS_DIR / "NotoSansTamil-Regular.ttf", WINDOWS_FONTS / "latha.ttf"],
+    "Telu": [FONTS_DIR / "NotoSerifTelugu-Regular.ttf", FONTS_DIR / "NotoSansTelugu-Regular.ttf", WINDOWS_FONTS / "gautami.ttf"],
+    "Knda": [FONTS_DIR / "NotoSerifKannada-Regular.ttf", FONTS_DIR / "NotoSansKannada-Regular.ttf", WINDOWS_FONTS / "tunga.ttf"],
+    "Mlym": [FONTS_DIR / "NotoSerifMalayalam-Regular.ttf", FONTS_DIR / "NotoSansMalayalam-Regular.ttf", WINDOWS_FONTS / "kartika.ttf"],
+}
+
 # Last-resort chain when the script has no entry at all. Nirmala covers every
 # Indic script; Arial covers Latin, Cyrillic, Greek, Arabic and Hebrew.
 UNIVERSAL_FALLBACKS: List[Path] = [
@@ -146,9 +161,12 @@ class FontManager:
         self.cached_font_paths: Dict[str, str] = {}
         self._spec_cache: Dict[str, Optional[FontSpec]] = {}
 
-    def _candidates_for(self, lang_code: str) -> List[Path]:
+    def _candidates_for(self, lang_code: str, is_serif: bool = False) -> List[Path]:
         script = script_of(lang_code)
-        candidates = list(DEFAULT_FONT_PREFERENCES.get(lang_code, []))
+        candidates = []
+        if is_serif and script in SCRIPT_SERIF_CANDIDATES:
+            candidates += SCRIPT_SERIF_CANDIDATES[script]
+        candidates += list(DEFAULT_FONT_PREFERENCES.get(lang_code, []))
         candidates += SCRIPT_FONT_CANDIDATES.get(script, [])
         candidates += UNIVERSAL_FALLBACKS
         return candidates
@@ -160,15 +178,17 @@ class FontManager:
                 return p
         return None
 
-    def get_font_spec_for_lang(self, lang_code: str) -> Optional[FontSpec]:
+    def get_font_spec_for_lang(self, lang_code: str, is_serif: bool = False) -> Optional[FontSpec]:
         """
         Resolves the best available font for a target language, along with the
         CSS family name and RTL flag needed to build Story HTML.
+        Supports both Serif and Sans-Serif font selection.
         """
-        if lang_code in self._spec_cache:
-            return self._spec_cache[lang_code]
+        cache_key = f"{lang_code}_{'serif' if is_serif else 'sans'}"
+        if cache_key in self._spec_cache:
+            return self._spec_cache[cache_key]
 
-        chosen = self._first_existing(self._candidates_for(lang_code))
+        chosen = self._first_existing(self._candidates_for(lang_code, is_serif=is_serif))
         if chosen is None:
             logger.warning(
                 "No font file found for %s (script %s). Story will fall back to a "
@@ -176,7 +196,7 @@ class FontManager:
                 "Noto font for this script into %s to fix.",
                 lang_code, script_of(lang_code), FONTS_DIR,
             )
-            self._spec_cache[lang_code] = None
+            self._spec_cache[cache_key] = None
             return None
 
         spec = FontSpec(
@@ -185,9 +205,9 @@ class FontManager:
             path=str(chosen.resolve()),
             is_rtl=is_rtl_language(lang_code),
         )
-        logger.info("Font for %s (%s): %s [family=%s, rtl=%s]",
-                    lang_code, script_of(lang_code), chosen.name, spec.family, spec.is_rtl)
-        self._spec_cache[lang_code] = spec
+        logger.info("Font for %s (%s, serif=%s): %s [family=%s, rtl=%s]",
+                    lang_code, script_of(lang_code), is_serif, chosen.name, spec.family, spec.is_rtl)
+        self._spec_cache[cache_key] = spec
         return spec
 
     def get_font_file_for_lang(self, lang_code: str) -> Optional[str]:

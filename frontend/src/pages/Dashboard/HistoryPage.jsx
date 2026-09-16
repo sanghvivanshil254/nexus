@@ -15,13 +15,12 @@ import {
   Lock,
   LogIn
 } from 'lucide-react';
-import { EXTRACTION_HISTORY_SEED, SAMPLE_DOCUMENTS } from '../../data/sampleDocuments';
 import { useToast } from '../../components/Toast';
 import { nexusApi } from '../../services/nexusApi';
 
 export const HistoryPage = ({ setCurrentView, user }) => {
   const { addToast } = useToast();
-  const [historyList, setHistoryList] = useState(EXTRACTION_HISTORY_SEED);
+  const [historyList, setHistoryList] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLangFilter, setSelectedLangFilter] = useState('ALL');
   const [previewItem, setPreviewItem] = useState(null);
@@ -29,7 +28,7 @@ export const HistoryPage = ({ setCurrentView, user }) => {
   // Sync real translation jobs from localStorage & backend (only for authenticated users)
   useEffect(() => {
     if (!user) {
-      setHistoryList(EXTRACTION_HISTORY_SEED);
+      setHistoryList([]);
       return;
     }
 
@@ -40,12 +39,11 @@ export const HistoryPage = ({ setCurrentView, user }) => {
         fileName: job.filename,
         docType: 'Translated PDF',
         language: `${(job.src_lang || 'en').toUpperCase()} → ${(job.tgt_lang || 'gu').toUpperCase()}`,
-        confidence: 99.4,
-        entitiesCount: 12,
-        tableRows: 4,
+        confidence: job.confidence || null,
+        entitiesCount: job.entities_count || null,
         status: (job.status || 'COMPLETED').toUpperCase(),
         timestamp: job.created_at ? new Date(job.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recent',
-        size: '1.6 MB',
+        size: job.file_size ? `${(job.file_size / (1024 * 1024)).toFixed(2)} MB` : '–',
         jobId: job.job_id
       }));
 
@@ -177,7 +175,7 @@ export const HistoryPage = ({ setCurrentView, user }) => {
         justifyContent: 'space-between',
         gap: '1rem'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '260px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 240px', width: '100%', minWidth: 'min(100%, 240px)' }}>
           <div className="input-wrapper" style={{ width: '100%' }}>
             <Search size={16} className="input-icon" />
             <input
@@ -191,7 +189,7 @@ export const HistoryPage = ({ setCurrentView, user }) => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Language Filter:</span>
           <select
             value={selectedLangFilter}
@@ -217,7 +215,7 @@ export const HistoryPage = ({ setCurrentView, user }) => {
         boxShadow: 'var(--shadow-sm)',
         overflow: 'hidden'
       }}>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="table-responsive">
           <table style={{
             width: '100%',
             borderCollapse: 'collapse',
@@ -262,7 +260,9 @@ export const HistoryPage = ({ setCurrentView, user }) => {
                       <span className="badge badge-primary">{item.language}</span>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span style={{ fontWeight: 700, color: '#10b981' }}>{item.confidence}%</span>
+                      {item.confidence != null
+                        ? <span style={{ fontWeight: 700, color: '#10b981' }}>{item.confidence}%</span>
+                        : <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>–</span>}
                     </td>
                     <td style={{ padding: '14px 16px', color: '#64748b' }}>
                       {item.timestamp}
@@ -365,11 +365,15 @@ export const HistoryPage = ({ setCurrentView, user }) => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
                 <span style={{ color: '#64748b' }}>Mean Accuracy:</span>
-                <strong style={{ color: '#10b981' }}>{previewItem.confidence}%</strong>
+                {previewItem.confidence != null
+                  ? <strong style={{ color: '#10b981' }}>{previewItem.confidence}%</strong>
+                  : <span style={{ color: '#94a3b8' }}>–</span>}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
                 <span style={{ color: '#64748b' }}>Entities & Key-Values:</span>
-                <strong style={{ color: '#0f172a' }}>{previewItem.entitiesCount} Extracted</strong>
+                {previewItem.entitiesCount != null
+                  ? <strong style={{ color: '#0f172a' }}>{previewItem.entitiesCount} Extracted</strong>
+                  : <span style={{ color: '#94a3b8' }}>–</span>}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#64748b' }}>Processed:</span>

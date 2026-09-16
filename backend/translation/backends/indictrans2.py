@@ -8,6 +8,7 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from backend.config import (
     DEVICE,
     INDICTRANS_MAX_INPUT_TOKENS,
+    INDICTRANS_MAX_OUTPUT_TOKENS,
     PARALLEL_BATCH_SIZE,
     NUM_BEAMS,
     TORCH_DTYPE,
@@ -122,7 +123,7 @@ class IndicTrans2Backend(BaseTranslationBackend):
             with torch.inference_mode():
                 generated = self.model.generate(
                     **inputs,
-                    max_new_tokens=INDICTRANS_MAX_INPUT_TOKENS,
+                    max_new_tokens=INDICTRANS_MAX_OUTPUT_TOKENS,
                     num_beams=num_beams,
                     use_cache=True,
                     early_stopping=True if num_beams > 1 else False,

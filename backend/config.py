@@ -87,10 +87,13 @@ TORCH_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
 
 # Memory / LRU model offloading (keep 1 model loaded in VRAM by default to prevent OOM)
 MAX_LOADED_MODELS = int(os.getenv("MAX_LOADED_MODELS", "1"))
+MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "1"))
 
 # Translation token limits
 INDICTRANS_MAX_INPUT_TOKENS = int(os.getenv("INDICTRANS_MAX_INPUT_TOKENS", "512"))
+INDICTRANS_MAX_OUTPUT_TOKENS = int(os.getenv("INDICTRANS_MAX_OUTPUT_TOKENS", "768"))
 NLLB_MAX_INPUT_TOKENS = int(os.getenv("NLLB_MAX_INPUT_TOKENS", "512"))
+NLLB_MAX_OUTPUT_TOKENS = int(os.getenv("NLLB_MAX_OUTPUT_TOKENS", "768"))
 OPUS_MT_MAX_INPUT_TOKENS = int(os.getenv("OPUS_MT_MAX_INPUT_TOKENS", "512"))
 CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", "512"))
 

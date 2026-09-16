@@ -16,7 +16,7 @@ def estimate_tokens(text: str) -> int:
     # Check if there is non-ascii text
     has_non_ascii = any(ord(c) > 127 for c in text)
     if has_non_ascii:
-        return max(int(word_count * 2.0), int(len(text) / 3))
+        return max(int(word_count * 1.5), int(len(text) / 4))
     return int(word_count * 1.3) + 5
 
 def chunk_text(
@@ -69,13 +69,15 @@ def chunk_text(
                 sent_tokens = get_token_count(sent)
                 
                 if sent_tokens > max_tokens:
-                    # Single sentence exceeds limit! Split by word or comma
-                    sub_parts = re.split(r'([,;:\-–—])', sent)
+                    # Single sentence exceeds limit! Split on clause boundaries preserving delimiter
+                    sub_parts = re.split(r'(?<=[,;:\-–—])\s+', sent)
                     temp_sub = ""
                     for sp in sub_parts:
-                        sp_tokens = get_token_count(temp_sub + sp)
-                        if sp_tokens <= max_tokens:
-                            temp_sub += sp
+                        if not sp.strip():
+                            continue
+                        candidate = (temp_sub + " " + sp).strip() if temp_sub else sp
+                        if get_token_count(candidate) <= max_tokens:
+                            temp_sub = candidate
                         else:
                             if temp_sub.strip():
                                 if current_chunk:

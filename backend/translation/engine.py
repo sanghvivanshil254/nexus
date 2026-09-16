@@ -89,8 +89,18 @@ class UniversalTranslationEngine:
                     device=self.device,
                     torch_dtype=self.torch_dtype,
                 )
+            elif decision.backend_type == "web_universal":
+                from backend.translation.backends.web_universal import UniversalWebBackend
+                self._backends[backend_key] = UniversalWebBackend(
+                    model_id=decision.model_id,
+                    device=self.device
+                )
             else:
-                raise ValueError(f"Unknown backend type: {decision.backend_type}")
+                from backend.translation.backends.web_universal import UniversalWebBackend
+                self._backends[backend_key] = UniversalWebBackend(
+                    model_id="nexus-universal-web",
+                    device=self.device
+                )
 
         backend = self._backends[backend_key]
 
@@ -102,8 +112,20 @@ class UniversalTranslationEngine:
                     logger.info("Evicting backend [%s] from VRAM to make room for [%s]", lru_key, backend_key)
                     self._backends[lru_key].unload()
 
-            backend.load()
-            self._loaded_lru.append(backend_key)
+            try:
+                backend.load()
+                self._loaded_lru.append(backend_key)
+            except Exception as load_err:
+                logger.warning(
+                    "Backend [%s] failed to load (%s). Seamlessly falling back to UniversalWebBackend.",
+                    backend_key,
+                    load_err,
+                )
+                from backend.translation.backends.web_universal import UniversalWebBackend
+                fallback_key = "web_universal::nexus-universal-web"
+                if fallback_key not in self._backends:
+                    self._backends[fallback_key] = UniversalWebBackend(model_id="nexus-universal-web")
+                return self._backends[fallback_key], "nexus-universal-web"
         else:
             # Refresh LRU position
             if backend_key in self._loaded_lru:

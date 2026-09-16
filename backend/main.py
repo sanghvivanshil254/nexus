@@ -3,12 +3,14 @@ import shutil
 import uuid
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Header
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
-from backend.config import OUTPUT_DIR, BACKEND_DIR, DEVICE, MODELS_DIR, MODEL_SIZE_TIER
+import threading
+
+from backend.config import OUTPUT_DIR, BACKEND_DIR, DEVICE, MODELS_DIR, MODEL_SIZE_TIER, MAX_CONCURRENT_JOBS
 from backend.db.mongo import mongo_db
 from backend.translation.router import LANG_CODE_MAP, ALL_INDIC_LANGS, is_indic_language
 from backend.translation.engine import translation_engine
@@ -34,18 +36,29 @@ app.add_middleware(
 
 UPLOADS_DIR = BACKEND_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+GUEST_TMP_DIR = UPLOADS_DIR / "tmp"
+GUEST_TMP_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_TMP_DIR = OUTPUT_DIR / "tmp"
+OUTPUT_TMP_DIR.mkdir(parents=True, exist_ok=True)
 
-def process_pdf_background(job_id: str, file_path: str, src_lang: str, tgt_lang: str, max_pages: Optional[int]):
-    try:
-        document_processor.process_document(
-            input_pdf_path=file_path,
-            src_lang=src_lang,
-            tgt_lang=tgt_lang,
-            job_id=job_id,
-            max_pages=max_pages
-        )
-    except Exception as e:
-        logger.error("Background translation failed for job %s: %s", job_id, e)
+PIPELINE_SEMAPHORE = threading.Semaphore(MAX_CONCURRENT_JOBS)
+
+def process_pdf_background(job_id: str, file_path: str, src_lang: str, tgt_lang: str, max_pages: Optional[int], is_guest: bool = False):
+    from backend.db.mongo import guest_context_var
+    guest_context_var.set(is_guest)
+    logger.info("Job %s waiting for pipeline concurrency slot...", job_id)
+    with PIPELINE_SEMAPHORE:
+        logger.info("Job %s acquired pipeline slot. Processing...", job_id)
+        try:
+            document_processor.process_document(
+                input_pdf_path=file_path,
+                src_lang=src_lang,
+                tgt_lang=tgt_lang,
+                job_id=job_id,
+                max_pages=max_pages
+            )
+        except Exception as e:
+            logger.error("Background translation failed for job %s: %s", job_id, e)
 
 @app.get("/api/health")
 def health_check():
@@ -102,32 +115,54 @@ def get_languages():
         {"code": "doi", "name": "Dogri", "language_tag": "doi_Deva", "region": "India", "primary_model": "IndicTrans2 1B"},
         {"code": "sat", "name": "Santali", "language_tag": "sat_Olck", "region": "India", "primary_model": "IndicTrans2 1B"},
 
-        # Global & European Languages (NLLB-200 1.3B / OPUS-MT)
-        {"code": "en", "name": "English", "language_tag": "eng_Latn", "region": "Global", "primary_model": "IndicTrans2 / NLLB"},
-        {"code": "es", "name": "Spanish", "language_tag": "spa_Latn", "region": "Europe", "primary_model": "NLLB-200 1.3B / OPUS-MT"},
-        {"code": "fr", "name": "French", "language_tag": "fra_Latn", "region": "Europe", "primary_model": "NLLB-200 1.3B / OPUS-MT"},
-        {"code": "de", "name": "German", "language_tag": "deu_Latn", "region": "Europe", "primary_model": "NLLB-200 1.3B / OPUS-MT"},
-        {"code": "it", "name": "Italian", "language_tag": "ita_Latn", "region": "Europe", "primary_model": "NLLB-200 1.3B / OPUS-MT"},
-        {"code": "pt", "name": "Portuguese", "language_tag": "por_Latn", "region": "Europe", "primary_model": "NLLB-200 1.3B"},
-        {"code": "nl", "name": "Dutch", "language_tag": "nld_Latn", "region": "Europe", "primary_model": "NLLB-200 1.3B"},
-        {"code": "ru", "name": "Russian", "language_tag": "rus_Cyrl", "region": "Eastern Europe", "primary_model": "NLLB-200 1.3B / OPUS-MT"},
-        {"code": "uk", "name": "Ukrainian", "language_tag": "ukr_Cyrl", "region": "Eastern Europe", "primary_model": "NLLB-200 1.3B"},
-        {"code": "pl", "name": "Polish", "language_tag": "pol_Latn", "region": "Eastern Europe", "primary_model": "NLLB-200 1.3B"},
+        # Global & European Languages (Universal Neural Router / OPUS-MT)
+        {"code": "en", "name": "English", "language_tag": "eng_Latn", "region": "Global", "primary_model": "IndicTrans2 / Universal Neural"},
+        {"code": "es", "name": "Spanish", "language_tag": "spa_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
+        {"code": "fr", "name": "French", "language_tag": "fra_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
+        {"code": "de", "name": "German", "language_tag": "deu_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
+        {"code": "it", "name": "Italian", "language_tag": "ita_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
+        {"code": "pt", "name": "Portuguese", "language_tag": "por_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
+        {"code": "nl", "name": "Dutch", "language_tag": "nld_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
+        {"code": "ru", "name": "Russian", "language_tag": "rus_Cyrl", "region": "Eastern Europe", "primary_model": "Universal Neural Router"},
+        {"code": "uk", "name": "Ukrainian", "language_tag": "ukr_Cyrl", "region": "Eastern Europe", "primary_model": "Universal Neural Router"},
+        {"code": "pl", "name": "Polish", "language_tag": "pol_Latn", "region": "Eastern Europe", "primary_model": "Universal Neural Router"},
 
         # East Asia & Middle East
-        {"code": "zh", "name": "Chinese (Simplified)", "language_tag": "zho_Hans", "region": "East Asia", "primary_model": "NLLB-200 1.3B"},
-        {"code": "ja", "name": "Japanese", "language_tag": "jpn_Jpan", "region": "East Asia", "primary_model": "NLLB-200 1.3B"},
-        {"code": "ko", "name": "Korean", "language_tag": "kor_Hang", "region": "East Asia", "primary_model": "NLLB-200 1.3B"},
-        {"code": "ar", "name": "Arabic", "language_tag": "arb_Arab", "region": "Middle East", "primary_model": "NLLB-200 1.3B"},
-        {"code": "fa", "name": "Persian", "language_tag": "pes_Arab", "region": "Middle East", "primary_model": "NLLB-200 1.3B"},
-        {"code": "tr", "name": "Turkish", "language_tag": "tur_Latn", "region": "Middle East", "primary_model": "NLLB-200 1.3B"},
+        {"code": "zh", "name": "Chinese (Simplified)", "language_tag": "zho_Hans", "region": "East Asia", "primary_model": "Universal Neural Router"},
+        {"code": "ja", "name": "Japanese", "language_tag": "jpn_Jpan", "region": "East Asia", "primary_model": "Universal Neural Router"},
+        {"code": "ko", "name": "Korean", "language_tag": "kor_Hang", "region": "East Asia", "primary_model": "Universal Neural Router"},
+        {"code": "ar", "name": "Arabic", "language_tag": "arb_Arab", "region": "Middle East", "primary_model": "Universal Neural Router"},
+        {"code": "fa", "name": "Persian", "language_tag": "pes_Arab", "region": "Middle East", "primary_model": "Universal Neural Router"},
+        {"code": "tr", "name": "Turkish", "language_tag": "tur_Latn", "region": "Middle East", "primary_model": "Universal Neural Router"},
 
         # Africa
-        {"code": "sw", "name": "Swahili", "language_tag": "swh_Latn", "region": "Africa", "primary_model": "NLLB-200 1.3B / AfriNLLB"},
-        {"code": "yo", "name": "Yoruba", "language_tag": "yor_Latn", "region": "Africa", "primary_model": "NLLB-200 1.3B / AfriNLLB"},
-        {"code": "zu", "name": "Zulu", "language_tag": "zul_Latn", "region": "Africa", "primary_model": "NLLB-200 1.3B / AfriNLLB"},
+        {"code": "sw", "name": "Swahili", "language_tag": "swh_Latn", "region": "Africa", "primary_model": "Universal Neural Router"},
+        {"code": "yo", "name": "Yoruba", "language_tag": "yor_Latn", "region": "Africa", "primary_model": "Universal Neural Router"},
+        {"code": "zu", "name": "Zulu", "language_tag": "zul_Latn", "region": "Africa", "primary_model": "Universal Neural Router"},
     ]
     return {"languages": languages, "total": len(languages)}
+
+
+from pydantic import BaseModel
+
+class TextTranslateRequest(BaseModel):
+    text: str
+    src_lang: str = "en"
+    tgt_lang: str = "gu"
+
+@app.post("/api/translate-text")
+def translate_text_endpoint(req: TextTranslateRequest):
+    try:
+        translated = translation_engine.translate_text(req.text, src_lang=req.src_lang, tgt_lang=req.tgt_lang)
+        return {
+            "translated_text": translated,
+            "src_lang": req.src_lang,
+            "tgt_lang": req.tgt_lang,
+            "success": True
+        }
+    except Exception as e:
+        logger.error("Text translation failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/translate")
@@ -136,18 +171,24 @@ async def translate_pdf(
     file: UploadFile = File(...),
     src_lang: str = Form("en"),
     tgt_lang: str = Form("gu"),
-    max_pages: Optional[int] = Form(None)
+    max_pages: Optional[int] = Form(None),
+    is_guest: bool = Form(False),
+    x_guest_mode: Optional[str] = Header(None)
 ):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
-    job_id = f"job_{uuid.uuid4().hex[:8]}"
-    save_path = UPLOADS_DIR / f"{job_id}_{file.filename}"
+    guest_mode = is_guest or (x_guest_mode and x_guest_mode.lower() == "true")
+    prefix = "guest" if guest_mode else "job"
+    job_id = f"{prefix}_{uuid.uuid4().hex[:8]}"
+    upload_dir = GUEST_TMP_DIR if guest_mode else UPLOADS_DIR
+    save_path = upload_dir / f"{job_id}_{file.filename}"
 
     with open(save_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    mongo_db.create_job(job_id, file.filename, src_lang, tgt_lang)
+    mongo_db.create_job(job_id, file.filename, src_lang, tgt_lang, is_guest=guest_mode)
+    logger.info("Created %s translation task: %s for %s", "GUEST (in-memory temporary)" if guest_mode else "USER", job_id, file.filename)
 
     background_tasks.add_task(
         process_pdf_background,
@@ -155,7 +196,8 @@ async def translate_pdf(
         file_path=str(save_path),
         src_lang=src_lang,
         tgt_lang=tgt_lang,
-        max_pages=max_pages
+        max_pages=max_pages,
+        is_guest=guest_mode
     )
 
     return {
@@ -164,7 +206,8 @@ async def translate_pdf(
         "src_lang": src_lang,
         "tgt_lang": tgt_lang,
         "status": "queued",
-        "message": "Translation task queued successfully."
+        "is_guest": guest_mode,
+        "message": "Translation task queued in temporary workspace." if guest_mode else "Translation task queued successfully."
     }
 
 from backend.config import OUTPUT_DIR, PREVIEWS_DIR, BACKEND_DIR, DEVICE, MODELS_DIR, MODEL_SIZE_TIER
@@ -173,33 +216,43 @@ import pymupdf
 
 def find_job_output_pdf(job_id: str) -> Optional[Path]:
     job = mongo_db.get_job(job_id)
-    if job and job.get("output_file") and Path(job["output_file"]).exists():
-        return Path(job["output_file"])
-    
-    # Check in OUTPUT_DIR for job_id match
-    for p in OUTPUT_DIR.glob(f"*{job_id}*.pdf"):
-        if p.exists() and p.stat().st_size > 0:
-            return p
-            
-    # Check tmp checkpoint file for job_id match
-    for p in OUTPUT_DIR.glob(f"*{job_id}*.tmp.pdf"):
-        if p.exists() and p.stat().st_size > 0:
-            return p
+    if job and job.get("output_file"):
+        raw_path = Path(job["output_file"])
+        if raw_path.exists() and raw_path.stat().st_size > 0:
+            return raw_path
+        # If server path changed, check file basename in current OUTPUT_DIR / OUTPUT_TMP_DIR
+        candidate = OUTPUT_DIR / raw_path.name
+        if candidate.exists() and candidate.stat().st_size > 0:
+            return candidate
+        candidate_tmp = OUTPUT_TMP_DIR / raw_path.name
+        if candidate_tmp.exists() and candidate_tmp.stat().st_size > 0:
+            return candidate_tmp
+
+    # Check in OUTPUT_DIR and OUTPUT_TMP_DIR for job_id match
+    for folder in [OUTPUT_DIR, OUTPUT_TMP_DIR]:
+        for p in folder.glob(f"*{job_id}*.pdf"):
+            if p.exists() and p.stat().st_size > 0:
+                return p
+        for p in folder.glob(f"*{job_id}*.tmp.pdf"):
+            if p.exists() and p.stat().st_size > 0:
+                return p
 
     return None
 
 def find_job_input_pdf(job_id: str) -> Optional[Path]:
-    for p in UPLOADS_DIR.glob(f"*{job_id}*"):
-        if p.exists() and p.suffix.lower() == ".pdf":
-            return p
+    for folder in [UPLOADS_DIR, GUEST_TMP_DIR]:
+        for p in folder.glob(f"*{job_id}*"):
+            if p.exists() and p.suffix.lower() == ".pdf":
+                return p
     job = mongo_db.get_job(job_id)
     if job and job.get("filename"):
-        p = UPLOADS_DIR / job["filename"]
-        if p.exists():
-            return p
-        for cand in UPLOADS_DIR.glob(f"*{job['filename']}*"):
-            if cand.exists() and cand.suffix.lower() == ".pdf":
-                return cand
+        for folder in [UPLOADS_DIR, GUEST_TMP_DIR]:
+            p = folder / job["filename"]
+            if p.exists():
+                return p
+            for cand in folder.glob(f"*{job['filename']}*"):
+                if cand.exists() and cand.suffix.lower() == ".pdf":
+                    return cand
     return None
 
 @app.get("/api/jobs/{job_id}")
@@ -280,11 +333,40 @@ def get_job_status(job_id: str):
 def get_rendered_page_preview(job_id: str, page_num: int):
     cached_path = PREVIEWS_DIR / job_id / f"page_{page_num}_rendered.png"
     if cached_path.exists():
-        return FileResponse(str(cached_path), media_type="image/png")
+        return FileResponse(
+            str(cached_path),
+            media_type="image/png",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
 
     out_pdf = find_job_output_pdf(job_id)
     if not out_pdf or not out_pdf.exists():
-        raise HTTPException(status_code=404, detail="Output PDF for job not found.")
+        # Also check for intermediate checkpoint tmp file
+        for p in OUTPUT_DIR.glob(f"*{job_id}*.tmp.pdf"):
+            if p.exists() and p.stat().st_size > 0:
+                out_pdf = p
+                break
+
+    if not out_pdf or not out_pdf.exists():
+        # Fallback to original page if rendered is not yet generated
+        in_pdf = find_job_input_pdf(job_id)
+        if in_pdf and in_pdf.exists():
+            try:
+                doc = pymupdf.open(str(in_pdf))
+                idx = min(page_num - 1, len(doc) - 1)
+                if idx >= 0:
+                    pix = doc[idx].get_pixmap(dpi=150)
+                    doc.close()
+                    cached_path.parent.mkdir(parents=True, exist_ok=True)
+                    pix.save(str(cached_path))
+                    return FileResponse(
+                        str(cached_path),
+                        media_type="image/png",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+                    )
+            except Exception:
+                pass
+        raise HTTPException(status_code=404, detail="Page preview not yet generated.")
 
     try:
         doc = pymupdf.open(str(out_pdf))
@@ -297,7 +379,11 @@ def get_rendered_page_preview(job_id: str, page_num: int):
         cached_path.parent.mkdir(parents=True, exist_ok=True)
         pix.save(str(cached_path))
         doc.close()
-        return FileResponse(str(cached_path), media_type="image/png")
+        return FileResponse(
+            str(cached_path),
+            media_type="image/png",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -308,7 +394,11 @@ def get_rendered_page_preview(job_id: str, page_num: int):
 def get_original_page_preview(job_id: str, page_num: int):
     cached_path = PREVIEWS_DIR / job_id / f"page_{page_num}_orig.png"
     if cached_path.exists():
-        return FileResponse(str(cached_path), media_type="image/png")
+        return FileResponse(
+            str(cached_path),
+            media_type="image/png",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
 
     in_pdf = find_job_input_pdf(job_id)
     if not in_pdf or not in_pdf.exists():
@@ -325,7 +415,11 @@ def get_original_page_preview(job_id: str, page_num: int):
         cached_path.parent.mkdir(parents=True, exist_ok=True)
         pix.save(str(cached_path))
         doc.close()
-        return FileResponse(str(cached_path), media_type="image/png")
+        return FileResponse(
+            str(cached_path),
+            media_type="image/png",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
     except HTTPException:
         raise
     except Exception as e:

@@ -64,7 +64,9 @@ class DocumentProcessor:
         text_blocks = analysis.get("text_blocks", [])
 
         if not analysis.get("is_scanned"):
-            return text_blocks, None
+            consolidated = self._consolidate_paragraph_blocks(text_blocks)
+            analysis["text_blocks"] = consolidated
+            return consolidated, None
 
         if not ocr_engine.is_available:
             warning = (
@@ -93,6 +95,47 @@ class DocumentProcessor:
         return ocr_blocks, None
 
     @staticmethod
+    def _consolidate_paragraph_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Consolidates adjacent fragmented blocks that belong to the same paragraph/column.
+        Eliminates broken sentence fragments, sentence overlap, and artificial text gaps.
+        """
+        if not blocks or len(blocks) <= 1:
+            return blocks
+
+        consolidated = []
+        for b in blocks:
+            # Filter out stray single-character non-alphanumeric noise
+            t = b.get("text", "").strip()
+            if len(t) <= 1 and not t.isalnum():
+                continue
+
+            if not consolidated:
+                consolidated.append(dict(b))
+                continue
+
+            prev = consolidated[-1]
+            gap = b["bbox"][1] - prev["bbox"][3]
+            w_match = abs(b["bbox"][0] - prev["bbox"][0]) <= 12.0 and abs(b["bbox"][2] - prev["bbox"][2]) <= 12.0
+            font_match = abs(b.get("avg_font_size", 10.0) - prev.get("avg_font_size", 10.0)) <= 1.0 and b.get("is_serif") == prev.get("is_serif")
+            not_special = not (b.get("is_table") or prev.get("is_table") or b.get("is_header") or b.get("is_footer") or prev.get("is_header") or prev.get("is_footer"))
+
+            # If adjacent line spacing and matching column geometry
+            if -4.0 <= gap <= prev.get("avg_font_size", 10.0) * 0.9 and w_match and font_match and not_special:
+                prev["bbox"] = [
+                    min(prev["bbox"][0], b["bbox"][0]),
+                    min(prev["bbox"][1], b["bbox"][1]),
+                    max(prev["bbox"][2], b["bbox"][2]),
+                    max(prev["bbox"][3], b["bbox"][3]),
+                ]
+                prev["text"] = prev["text"].rstrip() + " " + b["text"].lstrip()
+                prev["lines"].extend(b.get("lines", []))
+            else:
+                consolidated.append(dict(b))
+
+        return consolidated
+
+    @staticmethod
     def _is_translatable_block(block: Dict[str, Any]) -> bool:
         """Running heads and page numbers are layout furniture, not content."""
         if SKIP_HEADERS_FOOTERS and (block.get("is_header") or block.get("is_footer")):
@@ -114,6 +157,10 @@ class DocumentProcessor:
         mismatch counts: declaring Marathi for Devanagari text is fine, while
         declaring English for Devanagari text is not.
         """
+        if declared_src.lower() in ("auto", "auto_detect", "autodetect", ""):
+            detected = detect_script_language(sample_text) if sample_text.strip() else None
+            return detected or "eng_Latn", None
+
         if not AUTO_DETECT_SOURCE_LANG or not sample_text.strip():
             return declared_src, None
 
@@ -154,35 +201,44 @@ class DocumentProcessor:
         src = normalize_lang_code(src_lang)
         tgt = normalize_lang_code(tgt_lang)
 
-        doc = pymupdf.open(str(p))
-        total_pages = len(doc)
-        if max_pages and max_pages > 0:
-            total_pages = min(total_pages, max_pages)
-
-        if not output_filename:
-            timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-            output_filename = f"{p.stem}_{flores_to_display_name(tgt)}_{timestamp_str}.pdf"
-        output_path = OUTPUT_DIR / output_filename
-
-        job_previews_dir = PREVIEWS_DIR / job_id
-        job_previews_dir.mkdir(parents=True, exist_ok=True)
-
-        # Register or update job in MongoDB
-        mongo_db.create_job(job_id, p.name, src, tgt, total_pages=total_pages)
-        logger.info("Starting processing job %s: %s (%d pages) [%s -> %s]", job_id, p.name, total_pages, src, tgt)
-
-        # Pre-render original pages for side-by-side / diff comparisons
-        orig_doc = pymupdf.open(str(p))
-
+        doc = None
+        orig_doc = None
         start_time = time.time()
         total_elapsed = 0.0
-        page_batch_size = max(1, PAGE_BATCH_SIZE)
         warnings: List[str] = []
         ocr_pages: List[int] = []
         untranslated_pages: List[int] = []
         source_verified = False
+        final_saved = False
 
         try:
+            doc = pymupdf.open(str(p))
+            total_pages = len(doc)
+            if max_pages and max_pages > 0:
+                total_pages = min(total_pages, max_pages)
+
+            if not output_filename:
+                timestamp_str = time.strftime("%Y%m%d_%H%M%S")
+                output_filename = f"{p.stem}_{flores_to_display_name(tgt)}_{timestamp_str}.pdf"
+
+            if job_id.startswith("guest_"):
+                tmp_dir = OUTPUT_DIR / "tmp"
+                tmp_dir.mkdir(parents=True, exist_ok=True)
+                output_path = tmp_dir / output_filename
+            else:
+                output_path = OUTPUT_DIR / output_filename
+
+            job_previews_dir = PREVIEWS_DIR / job_id
+            job_previews_dir.mkdir(parents=True, exist_ok=True)
+
+            # Register or update job in in-memory RAM (guest) or MongoDB (user)
+            mongo_db.create_job(job_id, p.name, src, tgt, total_pages=total_pages, is_guest=job_id.startswith("guest_"))
+            logger.info("Starting processing job %s: %s (%d pages) [%s -> %s]", job_id, p.name, total_pages, src, tgt)
+
+            # Pre-render original pages for side-by-side / diff comparisons
+            orig_doc = pymupdf.open(str(p))
+            page_batch_size = max(1, PAGE_BATCH_SIZE)
+
             for batch_start in range(0, total_pages, page_batch_size):
                 batch_end = min(batch_start + page_batch_size, total_pages)
                 page_indices = list(range(batch_start, batch_end))
@@ -335,9 +391,9 @@ class DocumentProcessor:
 
                     # Progress calculation & logging
                     elapsed = time.time() - start_time
-                    avg_time_per_page = elapsed / p_num
+                    avg_time_per_page = elapsed / max(1, p_num)
                     remaining_pages = total_pages - p_num
-                    eta_seconds = remaining_pages * avg_time_per_page
+                    eta_seconds = max(0.0, remaining_pages * avg_time_per_page)
                     eta_str = f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
 
                     logger.info(
@@ -375,21 +431,24 @@ class DocumentProcessor:
                         if output_path.exists():
                             output_path.unlink()
                         shutil.move(str(checkpoint_temp), str(output_path))
+                        if is_last_batch:
+                            final_saved = True
                         logger.info("Batch checkpoint saved to: %s (%d/%d pages)", output_path, batch_end, total_pages)
                     except Exception as ce:
                         logger.warning("Checkpoint save non-critical warning: %s", ce)
 
-            # Final check and save with full garbage collection and deflate compression
-            checkpoint_temp = output_path.with_suffix(".tmp.pdf")
-            try:
-                if checkpoint_temp.exists():
-                    checkpoint_temp.unlink()
-                doc.save(str(checkpoint_temp), garbage=3, deflate=True)
-                if output_path.exists():
-                    output_path.unlink()
-                shutil.move(str(checkpoint_temp), str(output_path))
-            except Exception as fe:
-                logger.warning("Final save non-critical warning: %s", fe)
+            # Final check and save with full garbage collection and deflate compression (skip if already done)
+            if not final_saved and doc is not None:
+                checkpoint_temp = output_path.with_suffix(".tmp.pdf")
+                try:
+                    if checkpoint_temp.exists():
+                        checkpoint_temp.unlink()
+                    doc.save(str(checkpoint_temp), garbage=3, deflate=True)
+                    if output_path.exists():
+                        output_path.unlink()
+                    shutil.move(str(checkpoint_temp), str(output_path))
+                except Exception as fe:
+                    logger.warning("Final save non-critical warning: %s", fe)
 
             total_elapsed = round(time.time() - start_time, 2)
             logger.info("Job %s completed in %s seconds. Output saved to %s", job_id, total_elapsed, output_path)
@@ -432,10 +491,11 @@ class DocumentProcessor:
             # Both handles must close on every path, or Windows keeps a lock on
             # the uploaded PDF and it cannot be cleaned up.
             for handle in (doc, orig_doc):
-                try:
-                    handle.close()
-                except Exception:
-                    pass
+                if handle is not None:
+                    try:
+                        handle.close()
+                    except Exception:
+                        pass
 
 
 document_processor = DocumentProcessor()

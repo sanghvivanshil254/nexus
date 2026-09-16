@@ -198,10 +198,11 @@ translateDocument();`
           background: '#f8fafc',
           padding: '8px 12px',
           borderRadius: '10px',
-          border: '1px solid #e2e8f0'
+          border: '1px solid #e2e8f0',
+          flexWrap: 'wrap'
         }}>
-          <Key size={16} color="#2563eb" />
-          <code style={{ flex: 1, fontSize: '0.9rem', color: '#0f172a', fontWeight: 600 }}>
+          <Key size={16} color="#2563eb" style={{ flexShrink: 0 }} />
+          <code style={{ flex: '1 1 200px', fontSize: '0.88rem', color: '#0f172a', fontWeight: 600, wordBreak: 'break-all' }}>
             {apiKey}
           </code>
           <button

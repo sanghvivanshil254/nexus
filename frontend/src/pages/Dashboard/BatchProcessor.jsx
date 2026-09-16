@@ -40,63 +40,7 @@ export const BatchProcessor = () => {
     };
   }, []);
 
-  const [queue, setQueue] = useState([
-    {
-      id: 'batch-01',
-      fileName: 'Munich_Industrial_Invoices_Q1.pdf',
-      size: '4.2 MB',
-      pages: 12,
-      language: 'German (de)',
-      status: 'COMPLETED',
-      progress: 100,
-      entitiesFound: 48,
-      confidence: 99.4
-    },
-    {
-      id: 'batch-02',
-      fileName: 'Apollo_Delhi_Patient_Records_BatchB.pdf',
-      size: '6.8 MB',
-      pages: 18,
-      language: 'Hindi (hi)',
-      status: 'COMPLETED',
-      progress: 100,
-      entitiesFound: 72,
-      confidence: 98.9
-    },
-    {
-      id: 'batch-03',
-      fileName: 'Tokyo_Regional_Tax_Filings_2026.pdf',
-      size: '3.1 MB',
-      pages: 8,
-      language: 'Japanese (ja)',
-      status: 'PROCESSING',
-      progress: 65,
-      entitiesFound: 32,
-      confidence: 99.1
-    },
-    {
-      id: 'batch-04',
-      fileName: 'Madrid_RealEstate_Notary_Deeds.pdf',
-      size: '5.5 MB',
-      pages: 14,
-      language: 'Spanish (es)',
-      status: 'QUEUED',
-      progress: 0,
-      entitiesFound: 0,
-      confidence: 0
-    },
-    {
-      id: 'batch-05',
-      fileName: 'Dubai_Expat_Residency_Passports.pdf',
-      size: '8.4 MB',
-      pages: 22,
-      language: 'Arabic (ar)',
-      status: 'QUEUED',
-      progress: 0,
-      entitiesFound: 0,
-      confidence: 0
-    }
-  ]);
+  const [queue, setQueue] = useState([]);
 
   const [isProcessingAll, setIsProcessingAll] = useState(false);
 
@@ -337,34 +281,31 @@ export const BatchProcessor = () => {
       </div>
 
       {/* Summary KPI Cards */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '1rem',
-        marginBottom: '2rem'
-      }}>
+      <div className="metrics-grid">
         <div className="card" style={{ padding: '1.25rem' }}>
           <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block', marginBottom: '4px' }}>Total Ingested</span>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a' }}>{queue.length} Files</div>
-          <span style={{ fontSize: '0.75rem', color: '#2563eb' }}>74 Total Document Pages</span>
+          <span style={{ fontSize: '0.75rem', color: '#2563eb' }}>
+            {queue.reduce((acc, q) => acc + (q.pages || 0), 0)} Total Document Pages
+          </span>
         </div>
 
         <div className="card" style={{ padding: '1.25rem' }}>
           <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block', marginBottom: '4px' }}>Completed</span>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#10b981' }}>{completedCount}</div>
-          <span style={{ fontSize: '0.75rem', color: '#10b981' }}>100% Extraction Accuracy</span>
+          <span style={{ fontSize: '0.75rem', color: '#10b981' }}>{queue.length > 0 ? '100% Extraction Accuracy' : 'Ready'}</span>
         </div>
 
         <div className="card" style={{ padding: '1.25rem' }}>
           <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block', marginBottom: '4px' }}>In Progress</span>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#f59e0b' }}>{processingCount}</div>
-          <span style={{ fontSize: '0.75rem', color: '#f59e0b' }}>Active Worker Node #2</span>
+          <span style={{ fontSize: '0.75rem', color: '#f59e0b' }}>Active Worker Queue</span>
         </div>
 
         <div className="card" style={{ padding: '1.25rem' }}>
           <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block', marginBottom: '4px' }}>Queued</span>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#64748b' }}>{queuedCount}</div>
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Pending GPU Dispatch</span>
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Pending Processing</span>
         </div>
       </div>
 
@@ -397,7 +338,7 @@ export const BatchProcessor = () => {
           </button>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
+        <div className="table-responsive">
           <table style={{
             width: '100%',
             borderCollapse: 'collapse',
@@ -415,7 +356,16 @@ export const BatchProcessor = () => {
               </tr>
             </thead>
             <tbody>
-              {queue.map((item) => (
+              {queue.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8' }}>
+                    <Layers size={32} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
+                    <div style={{ fontWeight: 600, color: '#475569', fontSize: '0.95rem' }}>Batch Queue Empty</div>
+                    <div style={{ fontSize: '0.8rem', marginTop: '4px' }}>Click "Add PDF Files" above to enqueue real documents for batch OCR and neural translation.</div>
+                  </td>
+                </tr>
+              ) : (
+                queue.map((item) => (
                 <tr
                   key={item.id}
                   style={{
@@ -492,7 +442,7 @@ export const BatchProcessor = () => {
                     )}
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
         </div>

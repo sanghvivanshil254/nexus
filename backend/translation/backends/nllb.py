@@ -6,6 +6,7 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from backend.config import (
     DEVICE,
     NLLB_MAX_INPUT_TOKENS,
+    NLLB_MAX_OUTPUT_TOKENS,
     PARALLEL_BATCH_SIZE,
     NUM_BEAMS,
     TORCH_DTYPE,
@@ -34,12 +35,11 @@ class NLLBBackend(BaseTranslationBackend):
             return
 
         local_path = get_local_model_dir(self.model_id)
-        if not local_path.exists() or not any(local_path.iterdir()):
-            raise FileNotFoundError(
-                f"Offline model '{self.model_id}' is not cached at {local_path}. "
-                "Run: python backend/scripts/download_models.py --model nllb"
-            )
-        model_source = str(local_path)
+        if local_path.exists() and any(local_path.iterdir()):
+            model_source = str(local_path)
+        else:
+            model_source = self.model_id
+
         logger.info("Loading NLLB-200 from: %s on %s", model_source, self.device)
 
         try:
@@ -89,9 +89,10 @@ class NLLBBackend(BaseTranslationBackend):
                 generated = self.model.generate(
                     **inputs,
                     forced_bos_token_id=tgt_token_id,
-                    max_new_tokens=NLLB_MAX_INPUT_TOKENS,
+                    max_new_tokens=NLLB_MAX_OUTPUT_TOKENS,
                     num_beams=NUM_BEAMS,
                     early_stopping=True,
+                    use_cache=True,
                 )
 
             decoded = self.tokenizer.batch_decode(generated, skip_special_tokens=True)

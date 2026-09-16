@@ -4,36 +4,18 @@ import {
   Users, 
   Server, 
   Activity, 
-  Settings, 
   Sliders, 
-  ToggleLeft, 
-  ToggleRight, 
-  Key, 
-  Search, 
-  Filter, 
-  Plus, 
   Trash2, 
-  Edit3, 
-  CheckCircle2, 
-  AlertTriangle, 
-  XCircle, 
-  Clock, 
   Cpu, 
   HardDrive, 
-  Globe2, 
-  Lock, 
-  Eye, 
   FileText,
-  BarChart3,
   RefreshCw,
-  Sparkles,
-  ChevronRight,
   Database,
-  Terminal
+  Terminal,
+  Search
 } from 'lucide-react';
 import { useToast } from '../../components/Toast';
 import { useBackendStatus } from '../../hooks/useBackendStatus';
-import { nexusApi } from '../../services/nexusApi';
 
 export const AdminDashboard = ({ currentUser }) => {
   const { addToast } = useToast();
@@ -54,104 +36,33 @@ export const AdminDashboard = ({ currentUser }) => {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('ALL');
 
-  // Registered Users Mock State
-  const [usersList, setUsersList] = useState([
-    {
-      id: 'usr-1',
-      name: 'Dr. Alex Morgan',
-      email: 'alex.morgan@nexusocr.ai',
-      role: 'Super Admin',
-      organization: 'Nexus Core AI Team',
-      status: 'Active',
-      plan: 'Enterprise Unlimited',
-      monthlyDocs: 14200,
-      joined: '12 Jan 2026'
-    },
-    {
-      id: 'usr-2',
-      name: 'Sarah Chen',
-      email: 'sarah.chen@fintechcorp.de',
-      role: 'ML Engineer',
-      organization: 'Fintech Global DE',
-      status: 'Active',
-      plan: 'Enterprise Pro',
-      monthlyDocs: 8450,
-      joined: '02 Feb 2026'
-    },
-    {
-      id: 'usr-3',
-      name: 'Rajesh Sharma',
-      email: 'rajesh.sharma@delhihealth.in',
-      role: 'Document Specialist',
-      organization: 'Apollo Medical Delhi',
-      status: 'Active',
-      plan: 'Enterprise Pro',
-      monthlyDocs: 6120,
-      joined: '18 Feb 2026'
-    },
-    {
-      id: 'usr-4',
-      name: 'Elena Gómez',
-      email: 'elena.gomez@notariosmadrid.es',
-      role: 'Legal Analyst',
-      organization: 'Colegio Notarial Madrid',
-      status: 'Active',
-      plan: 'Standard Tier',
-      monthlyDocs: 1950,
-      joined: '25 Feb 2026'
-    },
-    {
-      id: 'usr-5',
-      name: 'Tariq Al-Mansouri',
-      email: 'tariq.mansouri@dubai-ai.ae',
-      role: 'Developer',
-      organization: 'Nexus AI Solutions LLC',
-      status: 'Pending',
-      plan: 'Evaluation Trial',
-      monthlyDocs: 320,
-      joined: '08 Mar 2026'
+  // Registered Users: populated from active authenticated session only
+  const [usersList, setUsersList] = useState(() => {
+    const user = currentUser;
+    if (user) {
+      return [{
+        id: 'usr-active',
+        name: user.name || 'System Administrator',
+        email: user.email || 'admin@nexusocr.ai',
+        role: user.role || 'Super Admin',
+        organization: user.organization || 'Nexus Deployment Cluster',
+        status: 'Active',
+        plan: 'Enterprise Unlimited',
+        monthlyDocs: 0,
+        joined: 'Active Session'
+      }];
     }
-  ]);
+    return [];
+  });
 
-  // Model Engine Switches
-  const [modelEngines, setModelEngines] = useState([
-    { id: 'eng-latin', name: 'Latin Extended OCR (EN, DE, ES, FR)', status: true, gpu: 'Node A100 #1', latency: '42ms', accuracy: '99.6%' },
-    { id: 'eng-devanagari', name: 'Devanagari OCR (Hindi, Marathi)', status: true, gpu: 'Node A100 #2', latency: '58ms', accuracy: '98.9%' },
-    { id: 'eng-arabic', name: 'Arabic RTL OCR & Bi-directional Parser', status: true, gpu: 'Node A100 #3', latency: '51ms', accuracy: '99.1%' },
-    { id: 'eng-cjk', name: 'CJK Ideograph OCR (Japanese, Chinese)', status: true, gpu: 'Node A100 #4', latency: '64ms', accuracy: '99.3%' },
-    { id: 'eng-ner', name: 'Semantic Named Entity Recognizer (NER)', status: true, gpu: 'Node V100 #1', latency: '28ms', accuracy: '99.4%' },
-    { id: 'eng-table', name: 'Deep Table Structure & Borderless Grid Parser', status: true, gpu: 'Node V100 #2', latency: '35ms', accuracy: '99.0%' }
-  ]);
+  // Live session logs (appended by user actions in this session only)
+  const [sessionLogs, setSessionLogs] = useState([]);
 
   // Pipeline Config
   const [pipelineConfig, setPipelineConfig] = useState({
-    autoDeskew: true,
-    binarizationThreshold: 128,
     minConfidenceCutoff: 85,
-    autoLanguageDetect: true,
-    enableColdStorageBackup: true,
     rateLimitPerMin: 1200
   });
-
-  // System Logs
-  const [systemLogs, setSystemLogs] = useState([
-    { id: 'log-101', timestamp: '11:42:01', level: 'INFO', module: 'OCR_ENGINE', message: 'Batch extraction completed: 18 pages (Hindi Medical Summary) in 480ms.' },
-    { id: 'log-102', timestamp: '11:41:25', level: 'INFO', module: 'AUTH', message: 'User login verified: alex.morgan@nexusocr.ai (Session Token issued).' },
-    { id: 'log-103', timestamp: '11:38:10', level: 'WARN', module: 'GPU_CLUSTER', message: 'Node A100 #4 VRAM utilization reached 78% during CJK batch load.' },
-    { id: 'log-104', timestamp: '11:35:44', level: 'INFO', module: 'TRANSLATE', message: 'Neural Translation executed: German to English (4,645 tokens).' },
-    { id: 'log-105', timestamp: '11:30:12', level: 'INFO', module: 'CONFIG', message: 'Confidence threshold updated to 85% by Super Admin.' }
-  ]);
-
-  const toggleModelEngine = (id) => {
-    setModelEngines(prev => prev.map(eng => {
-      if (eng.id === id) {
-        const nextState = !eng.status;
-        addToast(`${eng.name} is now ${nextState ? 'ENABLED' : 'DISABLED'}`, nextState ? 'success' : 'warning');
-        return { ...eng, status: nextState };
-      }
-      return eng;
-    }));
-  };
 
   const handleToggleUserStatus = (id) => {
     setUsersList(prev => prev.map(u => {
@@ -273,8 +184,8 @@ export const AdminDashboard = ({ currentUser }) => {
         {[
           { id: 'overview', label: 'Cluster Overview & Metrics', icon: Activity },
           { id: 'users', label: 'User & Team Management', icon: Users, count: usersList.length },
-          { id: 'models', label: 'Model Engines & Pipeline', icon: Cpu, count: modelEngines.length },
-          { id: 'logs', label: 'Security & Telemetry Logs', icon: FileText, count: systemLogs.length },
+          { id: 'models', label: 'Model Engines & Pipeline', icon: Cpu },
+          { id: 'logs', label: 'Session Event Log', icon: FileText, count: sessionLogs.length },
           { id: 'quotas', label: 'API Quotas & Limits', icon: Sliders }
         ].map((tab) => {
           const Icon = tab.icon;
@@ -323,11 +234,7 @@ export const AdminDashboard = ({ currentUser }) => {
       {activeAdminTab === 'overview' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
           {/* Top KPI Cards */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: '1.25rem'
-          }}>
+          <div className="metrics-grid">
             <div className="card" style={{ padding: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                 <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Supported Languages</span>
@@ -381,76 +288,70 @@ export const AdminDashboard = ({ currentUser }) => {
             </div>
           </div>
 
-          {/* Script Processing Distribution & Cluster Health */}
+          {/* Real-time Hardware Info from Backend */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
             gap: '1.5rem'
           }}>
-            {/* Script Breakdown */}
+            {/* Backend System Info */}
             <div className="card" style={{ padding: '1.5rem' }}>
               <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '1.25rem' }}>
-                Multilingual Script Traffic (Last 30 Days)
+                Backend System Info
               </h3>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {[
-                  { name: 'Latin Scripts (English, German, Spanish, French)', percent: 45, count: '66,730 docs', color: '#2563eb' },
-                  { name: 'Devanagari (Hindi, Marathi Medical & Gov)', percent: 24, count: '35,580 docs', color: '#10b981' },
-                  { name: 'CJK Ideographs (Japanese, Chinese Corporate)', percent: 18, count: '26,690 docs', color: '#f59e0b' },
-                  { name: 'Arabic RTL (Emirates ID, Passports, Contracts)', percent: 13, count: '19,290 docs', color: '#06b6d4' }
-                ].map((item, idx) => (
-                  <div key={idx}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '4px' }}>
-                      <span style={{ fontWeight: 600, color: '#334155' }}>{item.name}</span>
-                      <span style={{ fontWeight: 700, color: '#0f172a' }}>{item.percent}% ({item.count})</span>
+              {isBackendOnline ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.88rem' }}>
+                  {[
+                    { label: 'Compute Device', value: device?.toUpperCase() || 'CPU', color: device === 'cuda' ? '#10b981' : '#64748b' },
+                    { label: 'Model Tier', value: (modelTier || 'compact').toUpperCase(), color: '#f59e0b' },
+                    { label: 'Supported Languages', value: `${languageCount || 0} languages`, color: '#2563eb' },
+                    { label: 'Database', value: mongodbConnected ? 'MongoDB Connected' : 'In-Memory Cache', color: mongodbConnected ? '#10b981' : '#f59e0b' },
+                    { label: 'Offline Models Cached', value: cachedModels.length > 0 ? `${cachedModels.length} model(s)` : 'None cached', color: cachedModels.length > 0 ? '#10b981' : '#94a3b8' },
+                    { label: 'Models in VRAM', value: loadedModels.length > 0 ? `${loadedModels.length} loaded` : 'None loaded', color: loadedModels.length > 0 ? '#06b6d4' : '#94a3b8' }
+                  ].map((row, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '0.6rem', borderBottom: '1px solid #f1f5f9' }}>
+                      <span style={{ color: '#64748b', fontWeight: 500 }}>{row.label}</span>
+                      <strong style={{ color: row.color }}>{row.value}</strong>
                     </div>
-                    <div style={{ height: '7px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                      <div style={{ width: `${item.percent}%`, height: '100%', background: item.color }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8' }}>
+                  <Server size={32} style={{ marginBottom: '0.75rem', opacity: 0.4 }} />
+                  <p style={{ fontSize: '0.88rem' }}>Backend is offline. Start the FastAPI server to see live system info.</p>
+                </div>
+              )}
             </div>
 
-            {/* GPU Node Telemetry */}
+            {/* Active VRAM Models */}
             <div className="card" style={{ padding: '1.5rem' }}>
               <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '1.25rem' }}>
-                GPU Node Cluster Telemetry
+                Resident VRAM / RAM Models
               </h3>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                {[
-                  { node: 'A100-Node-01 (Latin Engine)', vram: '42%', temp: '54°C', load: '38%', status: 'Optimal' },
-                  { node: 'A100-Node-02 (Devanagari Engine)', vram: '56%', temp: '58°C', load: '52%', status: 'Optimal' },
-                  { node: 'A100-Node-03 (Arabic RTL Engine)', vram: '48%', temp: '56°C', load: '44%', status: 'Optimal' },
-                  { node: 'A100-Node-04 (CJK Transformer)', vram: '64%', temp: '61°C', load: '68%', status: 'Optimal' },
-                  { node: 'V100-Node-05 (NER & Table Extractor)', vram: '35%', temp: '51°C', load: '30%', status: 'Optimal' }
-                ].map((n, idx) => (
-                  <div
-                    key={idx}
-                    style={{
+              {loadedModels.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  {loadedModels.map((m, i) => (
+                    <div key={i} style={{
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       padding: '8px 12px',
-                      background: '#f8fafc',
+                      background: '#ecfeff',
                       borderRadius: '8px',
-                      border: '1px solid #f1f5f9',
+                      border: '1px solid #a5f3fc',
                       fontSize: '0.82rem'
-                    }}
-                  >
-                    <div>
-                      <strong style={{ color: '#0f172a', display: 'block' }}>{n.node}</strong>
-                      <span style={{ color: '#64748b' }}>VRAM: {n.vram} | Temp: {n.temp}</span>
+                    }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0891b2' }}>{m}</span>
+                      <span className="badge badge-primary" style={{ fontSize: '0.68rem' }}>In Memory</span>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>{n.status}</span>
-                      <span style={{ display: 'block', color: '#64748b', fontSize: '0.75rem', marginTop: '2px' }}>Load: {n.load}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8' }}>
+                  <Cpu size={32} style={{ marginBottom: '0.75rem', opacity: 0.4 }} />
+                  <p style={{ fontSize: '0.85rem' }}>No models currently loaded. Models load on-demand via LRU cache on first translation request.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -527,7 +428,14 @@ export const AdminDashboard = ({ currentUser }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredUsers.map((u) => (
+                  {filteredUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8' }}>
+                        No registered users found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredUsers.map((u) => (
                     <tr
                       key={u.id}
                       style={{ borderBottom: '1px solid #f1f5f9' }}
@@ -602,7 +510,7 @@ export const AdminDashboard = ({ currentUser }) => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )))}
                 </tbody>
               </table>
             </div>
@@ -613,7 +521,7 @@ export const AdminDashboard = ({ currentUser }) => {
       {/* ================= TAB 3: MODEL ENGINES & PIPELINE CONFIG ================= */}
       {activeAdminTab === 'models' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-          
+
           {/* Real Backend Model Cache & Hardware Offloader Telemetry Card */}
           <div className="card" style={{ padding: '1.5rem', background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '10px' }}>
@@ -650,31 +558,16 @@ export const AdminDashboard = ({ currentUser }) => {
               marginBottom: '1rem'
             }}>
               {/* Cached Models on Disk */}
-              <div style={{
-                background: '#ffffff',
-                borderRadius: '12px',
-                border: '1px solid #e2e8f0',
-                padding: '1rem'
-              }}>
+              <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                   <HardDrive size={16} color="#2563eb" />
                   <strong style={{ fontSize: '0.88rem', color: '#0f172a' }}>Offline Weights Directory</strong>
-                  <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: 'auto' }}>
-                    ({cachedModels.length} cached)
-                  </span>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: 'auto' }}>({cachedModels.length} cached)</span>
                 </div>
                 {cachedModels.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {cachedModels.map((m, i) => (
-                      <div key={i} style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '6px 10px',
-                        background: '#f8fafc',
-                        borderRadius: '6px',
-                        fontSize: '0.78rem'
-                      }}>
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: '#f8fafc', borderRadius: '6px', fontSize: '0.78rem' }}>
                         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0f172a' }}>{m}</span>
                         <span className="badge badge-success" style={{ fontSize: '0.68rem' }}>Cached</span>
                       </div>
@@ -683,15 +576,7 @@ export const AdminDashboard = ({ currentUser }) => {
                 ) : (
                   <div style={{ padding: '8px', background: '#f8fafc', borderRadius: '8px', fontSize: '0.78rem', color: '#64748b' }}>
                     <span>No local model folders found in <code>backend/models/</code>. Run CLI to download weights:</span>
-                    <pre style={{
-                      margin: '6px 0 0',
-                      padding: '6px 8px',
-                      background: '#0f172a',
-                      color: '#38bdf8',
-                      borderRadius: '6px',
-                      fontSize: '0.72rem',
-                      fontFamily: 'var(--font-mono)'
-                    }}>
+                    <pre style={{ margin: '6px 0 0', padding: '6px 8px', background: '#0f172a', color: '#38bdf8', borderRadius: '6px', fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>
                       python backend/scripts/download_models.py --model indictrans2 --tier compact --direction en-indic
                     </pre>
                   </div>
@@ -699,31 +584,16 @@ export const AdminDashboard = ({ currentUser }) => {
               </div>
 
               {/* VRAM Loaded Models */}
-              <div style={{
-                background: '#ffffff',
-                borderRadius: '12px',
-                border: '1px solid #e2e8f0',
-                padding: '1rem'
-              }}>
+              <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                   <Cpu size={16} color="#06b6d4" />
                   <strong style={{ fontSize: '0.88rem', color: '#0f172a' }}>Resident VRAM / RAM Models</strong>
-                  <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: 'auto' }}>
-                    ({loadedModels.length} active)
-                  </span>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: 'auto' }}>({loadedModels.length} active)</span>
                 </div>
                 {loadedModels.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {loadedModels.map((m, i) => (
-                      <div key={i} style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '6px 10px',
-                        background: '#ecfeff',
-                        borderRadius: '6px',
-                        fontSize: '0.78rem'
-                      }}>
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: '#ecfeff', borderRadius: '6px', fontSize: '0.78rem' }}>
                         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0891b2' }}>{m}</span>
                         <span className="badge badge-primary" style={{ fontSize: '0.68rem' }}>In Memory</span>
                       </div>
@@ -731,147 +601,71 @@ export const AdminDashboard = ({ currentUser }) => {
                   </div>
                 ) : (
                   <div style={{ padding: '8px', background: '#f8fafc', borderRadius: '8px', fontSize: '0.78rem', color: '#64748b' }}>
-                    <span>No models currently loaded in memory. Models are loaded on-demand via LRU cache on first translation request.</span>
+                    No models currently loaded in memory. Models are loaded on-demand via LRU cache on first translation request.
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Active Model Engines Switchboard */}
-          <div className="card" style={{ padding: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>
-                  Multilingual Recognition Engines
-                </h3>
-                <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
-                  Enable or route specific script models to dedicated GPU worker clusters.
-                </p>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {modelEngines.map((eng) => (
-                <div
-                  key={eng.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px 16px',
-                    background: eng.status ? '#ffffff' : '#f8fafc',
-                    borderRadius: '12px',
-                    border: `1px solid ${eng.status ? '#e2e8f0' : '#f1f5f9'}`,
-                    boxShadow: eng.status ? 'var(--shadow-xs)' : 'none'
-                  }}
-                >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
-                      <strong style={{ color: eng.status ? '#0f172a' : '#94a3b8', fontSize: '0.95rem' }}>
-                        {eng.name}
-                      </strong>
-                      <span className={`badge ${eng.status ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.7rem' }}>
-                        {eng.status ? 'ONLINE' : 'OFFLINE'}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                      Assigned GPU: <strong style={{ color: '#2563eb' }}>{eng.gpu}</strong> | Latency: {eng.latency} | Mean Accuracy: {eng.accuracy}
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() => toggleModelEngine(eng.id)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      color: eng.status ? '#10b981' : '#cbd5e1',
-                      display: 'flex'
-                    }}
-                  >
-                    {eng.status ? <ToggleRight size={36} /> : <ToggleLeft size={36} />}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Pre-Processing Pipeline Sliders & Toggles */}
+          {/* Pre-Processing Pipeline Sliders */}
           <div className="card" style={{ padding: '1.5rem' }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a', marginBottom: '1.25rem' }}>
               Global Pre-Processing & Confidence Thresholds
             </h3>
-
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
               <div>
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
                   Minimum Confidence Cutoff ({pipelineConfig.minConfidenceCutoff}%)
                 </label>
                 <input
-                  type="range"
-                  min="60"
-                  max="99"
+                  type="range" min="60" max="99"
                   value={pipelineConfig.minConfidenceCutoff}
                   onChange={(e) => setPipelineConfig({ ...pipelineConfig, minConfidenceCutoff: Number(e.target.value) })}
                   style={{ width: '100%', accentColor: '#2563eb' }}
                 />
-                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                  Extractions below this threshold are flagged for human-in-the-loop review.
-                </span>
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Extractions below this threshold are flagged for human-in-the-loop review.</span>
               </div>
-
               <div>
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', display: 'block', marginBottom: '6px' }}>
                   Global API Rate Limit ({pipelineConfig.rateLimitPerMin} req/min)
                 </label>
                 <input
-                  type="range"
-                  min="200"
-                  max="5000"
-                  step="100"
+                  type="range" min="200" max="5000" step="100"
                   value={pipelineConfig.rateLimitPerMin}
                   onChange={(e) => setPipelineConfig({ ...pipelineConfig, rateLimitPerMin: Number(e.target.value) })}
                   style={{ width: '100%', accentColor: '#2563eb' }}
                 />
-                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                  Prevents GPU saturation during burst document ingest queues.
-                </span>
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Prevents GPU saturation during burst document ingest queues.</span>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ================= TAB 4: SECURITY & TELEMETRY LOGS ================= */}
+      {/* ================= TAB 4: SESSION EVENT LOG ================= */}
       {activeAdminTab === 'logs' && (
         <div className="card" style={{ padding: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
             <div>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>
-                Real-Time Security & Telemetry Event Stream
+                Session Event Log
               </h3>
               <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
-                Live streaming logs from pipeline workers, auth nodes, and GPU orchestrators.
+                Actions performed in this admin session. Logs are cleared on page refresh.
               </p>
             </div>
-
             <button
               onClick={() => {
-                const newLog = {
-                  id: `log-${Date.now()}`,
-                  timestamp: new Date().toLocaleTimeString(),
-                  level: 'INFO',
-                  module: 'AUDIT',
-                  message: 'Security log stream flushed and verified.'
-                };
-                setSystemLogs([newLog, ...systemLogs]);
-                addToast('Telemetry stream refreshed', 'info');
+                const entry = { id: `log-${Date.now()}`, timestamp: new Date().toLocaleTimeString(), level: 'INFO', module: 'ADMIN', message: 'Backend health status manually refreshed.' };
+                setSessionLogs(prev => [entry, ...prev]);
+                recheck();
+                addToast('Backend status refreshed', 'info');
               }}
               className="btn btn-secondary btn-sm"
             >
               <RefreshCw size={14} />
-              <span>Poll Events</span>
+              <span>Refresh Backend</span>
             </button>
           </div>
 
@@ -883,24 +677,27 @@ export const AdminDashboard = ({ currentUser }) => {
             fontSize: '0.8rem',
             color: '#e2e8f0',
             maxHeight: '400px',
+            minHeight: '120px',
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
             gap: '8px'
           }}>
-            {systemLogs.map((log) => (
-              <div key={log.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <span style={{ color: '#64748b' }}>[{log.timestamp}]</span>
-                <span style={{
-                  color: log.level === 'WARN' ? '#f59e0b' : log.level === 'ERROR' ? '#ef4444' : '#10b981',
-                  fontWeight: 700
-                }}>
-                  [{log.level}]
-                </span>
-                <span style={{ color: '#38bdf8' }}>[{log.module}]</span>
-                <span style={{ color: '#f8fafc', flex: 1 }}>{log.message}</span>
+            {sessionLogs.length === 0 ? (
+              <div style={{ color: '#475569', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Terminal size={14} />
+                <span>No events yet this session. Perform actions above to see log entries here.</span>
               </div>
-            ))}
+            ) : (
+              sessionLogs.map((log) => (
+                <div key={log.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                  <span style={{ color: '#64748b' }}>[{log.timestamp}]</span>
+                  <span style={{ color: log.level === 'WARN' ? '#f59e0b' : log.level === 'ERROR' ? '#ef4444' : '#10b981', fontWeight: 700 }}>[{log.level}]</span>
+                  <span style={{ color: '#38bdf8' }}>[{log.module}]</span>
+                  <span style={{ color: '#f8fafc', flex: 1 }}>{log.message}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -910,15 +707,15 @@ export const AdminDashboard = ({ currentUser }) => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
           <div className="card" style={{ padding: '1.5rem' }}>
             <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '1rem' }}>
-              Enterprise Plan Allocation
+              Enterprise Plan
             </h3>
             <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.25rem' }}>
-              Unlimited OCR concurrency, dedicated A100 GPU affinity, 99.99% uptime guarantee.
+              Unlimited OCR concurrency, dedicated GPU affinity, 99.99% uptime guarantee.
             </p>
             <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#2563eb', marginBottom: '0.5rem' }}>
               Unlimited Pages / Month
             </div>
-            <span className="badge badge-success">3 Enterprise Tenants Active</span>
+            <span className="badge badge-success">Contact for pricing</span>
           </div>
 
           <div className="card" style={{ padding: '1.5rem' }}>
@@ -931,7 +728,7 @@ export const AdminDashboard = ({ currentUser }) => {
             <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.5rem' }}>
               10,000 Pages / Month
             </div>
-            <span className="badge badge-primary">12 Team Tenants Active</span>
+            <span className="badge badge-primary">Team plan</span>
           </div>
 
           <div className="card" style={{ padding: '1.5rem' }}>
@@ -944,7 +741,7 @@ export const AdminDashboard = ({ currentUser }) => {
             <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#64748b', marginBottom: '0.5rem' }}>
               500 Pages (14 Days)
             </div>
-            <span className="badge badge-warning">Auto-provisions upon Signup</span>
+            <span className="badge badge-warning">Auto-provisions upon signup</span>
           </div>
         </div>
       )}

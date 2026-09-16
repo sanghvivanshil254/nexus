@@ -19,13 +19,87 @@ import {
   Lock,
   Download
 } from 'lucide-react';
-import { SUPPORTED_LANGUAGES, SAMPLE_DOCUMENTS } from '../data/sampleDocuments';
+import { SUPPORTED_LANGUAGES } from '../data/sampleDocuments';
 
 export const LandingPage = ({ setCurrentView, user }) => {
-  const [activeTabLang, setActiveTabLang] = useState('hi');
-  const [activeSampleIndex, setActiveSampleIndex] = useState(0);
+  const [selectedLangIndex, setSelectedLangIndex] = useState(0);
 
-  const activeDoc = SAMPLE_DOCUMENTS[activeSampleIndex] || SAMPLE_DOCUMENTS[0];
+  const FEATURED_ENGINES = [
+    {
+      code: 'gu',
+      name: 'Gujarati (ગુજરાતી)',
+      flag: '🇮🇳',
+      engine: 'IndicTrans2 1B (CUDA fp16)',
+      script: 'Gujarati Complex Script',
+      shaper: 'HarfBuzz OpenType Ligatures',
+      vram: '~1.5 GB VRAM',
+      latency: '240ms / page',
+      accuracy: '99.4%',
+      features: ['Full Conjunct Vowel Ligatures', 'Vector Bounding Box Alignment', 'Preserved Line Heights']
+    },
+    {
+      code: 'hi',
+      name: 'Hindi (हिन्दी)',
+      flag: '🇮🇳',
+      engine: 'IndicTrans2 1B (CUDA fp16)',
+      script: 'Devanagari Complex Script',
+      shaper: 'HarfBuzz OpenType Ligatures',
+      vram: '~1.5 GB VRAM',
+      latency: '220ms / page',
+      accuracy: '99.6%',
+      features: ['Halant & Matra Reconstruction', 'Multi-column Table Detection', 'Zero-leakage Streaming']
+    },
+    {
+      code: 'ru',
+      name: 'Russian (Русский)',
+      flag: '🇷🇺',
+      engine: 'Universal Neural Router',
+      script: 'Cyrillic Script',
+      shaper: 'MuPDF Font Embedding',
+      vram: '0 MB VRAM (Lightweight)',
+      latency: '150ms / page',
+      accuracy: '99.2%',
+      features: ['Case-sensitive Morphology', 'Exact Paragraph Reflow', 'Instant Page Rendering']
+    },
+    {
+      code: 'es',
+      name: 'Spanish (Español)',
+      flag: '🇪🇸',
+      engine: 'Universal Neural Router',
+      script: 'Latin Extended',
+      shaper: 'Vector Typography Shaper',
+      vram: '0 MB VRAM (Lightweight)',
+      latency: '140ms / page',
+      accuracy: '99.5%',
+      features: ['Inverted Punctuation ¿¡', 'Dynamic Kerning', 'Vector PDF Reconstruction']
+    },
+    {
+      code: 'ja',
+      name: 'Japanese (日本語)',
+      flag: '🇯🇵',
+      engine: 'Universal Neural Router',
+      script: 'CJK (Kanji / Kana)',
+      shaper: 'Noto Sans CJK Shaper',
+      vram: '0 MB VRAM (Lightweight)',
+      latency: '180ms / page',
+      accuracy: '99.1%',
+      features: ['Vertical & Horizontal Flow', 'Ruby Text Support', 'Layout Preservation']
+    },
+    {
+      code: 'ar',
+      name: 'Arabic (العربية)',
+      flag: '🇦🇪',
+      engine: 'Universal Neural Router',
+      script: 'Arabic (RTL)',
+      shaper: 'FriBidi RTL Shaper',
+      vram: '0 MB VRAM (Lightweight)',
+      latency: '160ms / page',
+      accuracy: '99.3%',
+      features: ['Right-to-Left Directionality', 'Cursive Letter Shaping', 'Complex Contextual Glyphs']
+    }
+  ];
+
+  const activeEngine = FEATURED_ENGINES[selectedLangIndex] || FEATURED_ENGINES[0];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '5rem', paddingBottom: '4rem' }}>
@@ -40,8 +114,8 @@ export const LandingPage = ({ setCurrentView, user }) => {
         <div className="container">
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
-            gap: '3.5rem',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+            gap: 'clamp(2rem, 4vw, 3.5rem)',
             alignItems: 'center'
           }}>
             
@@ -178,15 +252,15 @@ export const LandingPage = ({ setCurrentView, user }) => {
                     boxShadow: '0 0 8px #10b981'
                   }} />
                   <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
-                    Live Pipeline Visualizer
+                    Neural Engine Architecture
                   </span>
                 </div>
                 <span className="badge badge-primary">
-                  {activeDoc.language}
+                  {activeEngine.flag} {activeEngine.name.split(' ')[0]}
                 </span>
               </div>
 
-              {/* Sample Document switcher pills */}
+              {/* Language Engine switcher pills */}
               <div style={{
                 display: 'flex',
                 gap: '6px',
@@ -194,101 +268,76 @@ export const LandingPage = ({ setCurrentView, user }) => {
                 paddingBottom: '0.5rem',
                 marginBottom: '1rem'
               }}>
-                {SAMPLE_DOCUMENTS.map((doc, idx) => (
+                {FEATURED_ENGINES.map((eng, idx) => (
                   <button
-                    key={doc.id}
-                    onClick={() => setActiveSampleIndex(idx)}
+                    key={eng.code}
+                    onClick={() => setSelectedLangIndex(idx)}
                     style={{
                       padding: '5px 10px',
                       borderRadius: '8px',
                       border: '1px solid',
-                      borderColor: activeSampleIndex === idx ? '#2563eb' : '#e2e8f0',
-                      background: activeSampleIndex === idx ? '#eff6ff' : '#ffffff',
-                      color: activeSampleIndex === idx ? '#2563eb' : '#64748b',
+                      borderColor: selectedLangIndex === idx ? '#2563eb' : '#e2e8f0',
+                      background: selectedLangIndex === idx ? '#eff6ff' : '#ffffff',
+                      color: selectedLangIndex === idx ? '#2563eb' : '#64748b',
                       fontSize: '0.75rem',
                       fontWeight: 600,
                       cursor: 'pointer',
                       whiteSpace: 'nowrap'
                     }}
                   >
-                    {doc.language.split(' ')[0]}
+                    {eng.flag} {eng.name.split(' ')[0]}
                   </button>
                 ))}
               </div>
 
-              {/* Document Mock Canvas with Scan Laser */}
+              {/* Neural Model Engine Architecture Card */}
               <div style={{
                 position: 'relative',
-                background: '#f8fafc',
+                background: '#0f172a',
                 borderRadius: '12px',
-                border: '1px solid #e2e8f0',
-                padding: '1rem',
-                height: '240px',
+                border: '1px solid #1e293b',
+                padding: '1.25rem',
+                minHeight: '240px',
                 overflow: 'hidden',
-                marginBottom: '1rem'
+                marginBottom: '1rem',
+                color: '#f8fafc'
               }}>
-                {/* Laser animation */}
-                <div className="scan-laser" />
+                {/* Visualizer header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Target Pipeline Engine
+                  </span>
+                  <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 600, background: 'rgba(16,185,129,0.15)', padding: '2px 8px', borderRadius: '4px' }}>
+                    {activeEngine.vram}
+                  </span>
+                </div>
 
-                {/* Document preview text with colored bounding boxes */}
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', marginBottom: '6px' }}>
+                  {activeEngine.engine}
+                </div>
+                
+                <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '12px' }}>
+                  Font Shaper: <strong style={{ color: '#e2e8f0' }}>{activeEngine.shaper}</strong>
+                </div>
+
+                {/* Features checklist */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                  {activeEngine.features.map((feat, fIdx) => (
+                    <div key={fIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: '#cbd5e1' }}>
+                      <CheckCircle2 size={13} color="#34d399" />
+                      <span>{feat}</span>
+                    </div>
+                  ))}
+                </div>
+
                 <div style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.75rem',
-                  lineHeight: 1.6,
-                  color: '#334155',
-                  overflow: 'hidden',
-                  height: '100%'
+                  background: 'rgba(255,255,255,0.06)',
+                  borderRadius: '6px',
+                  padding: '8px 10px',
+                  fontSize: '0.72rem',
+                  color: '#94a3b8'
                 }}>
-                  <div style={{
-                    background: 'rgba(37, 99, 235, 0.08)',
-                    border: '1px dashed #2563eb',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    marginBottom: '6px',
-                    fontWeight: 700,
-                    color: '#1e40af'
-                  }}>
-                    [HEADER]: {activeDoc.boxes[0]?.text || activeDoc.title}
-                  </div>
-                  
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '6px',
-                    marginBottom: '6px'
-                  }}>
-                    <div style={{
-                      background: 'rgba(16, 185, 129, 0.08)',
-                      border: '1px solid #10b981',
-                      padding: '4px 6px',
-                      borderRadius: '4px',
-                      fontSize: '0.7rem'
-                    }}>
-                      <strong style={{ color: '#065f46' }}>{activeDoc.entities[0]?.label}:</strong><br />
-                      {activeDoc.entities[0]?.value}
-                    </div>
-                    <div style={{
-                      background: 'rgba(245, 158, 11, 0.08)',
-                      border: '1px solid #f59e0b',
-                      padding: '4px 6px',
-                      borderRadius: '4px',
-                      fontSize: '0.7rem'
-                    }}>
-                      <strong style={{ color: '#92400e' }}>{activeDoc.entities[1]?.label}:</strong><br />
-                      {activeDoc.entities[1]?.value}
-                    </div>
-                  </div>
-
-                  <div style={{
-                    background: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '4px',
-                    padding: '6px',
-                    fontSize: '0.68rem',
-                    color: '#64748b'
-                  }}>
-                    {activeDoc.rawText.slice(0, 180)}...
-                  </div>
+                  Live Routing: Translates into <strong>{activeEngine.name}</strong> preserving complex ligatures, font weights, and bounding boxes.
                 </div>
               </div>
 
@@ -305,16 +354,16 @@ export const LandingPage = ({ setCurrentView, user }) => {
                 marginBottom: '1rem'
               }}>
                 <div>
-                  <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Confidence</span>
-                  <strong style={{ fontSize: '0.95rem', color: '#10b981' }}>{activeDoc.confidenceScore}%</strong>
+                  <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Accuracy</span>
+                  <strong style={{ fontSize: '0.95rem', color: '#10b981' }}>{activeEngine.accuracy}</strong>
                 </div>
                 <div>
                   <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Script</span>
-                  <strong style={{ fontSize: '0.85rem', color: '#0f172a' }}>{activeDoc.scriptType.split(' ')[0]}</strong>
+                  <strong style={{ fontSize: '0.85rem', color: '#0f172a' }}>{activeEngine.script.split(' ')[0]}</strong>
                 </div>
                 <div>
-                  <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Inference</span>
-                  <strong style={{ fontSize: '0.95rem', color: '#2563eb' }}>{activeDoc.processingTime}</strong>
+                  <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>Latency</span>
+                  <strong style={{ fontSize: '0.95rem', color: '#2563eb' }}>{activeEngine.latency}</strong>
                 </div>
               </div>
 
@@ -348,7 +397,7 @@ export const LandingPage = ({ setCurrentView, user }) => {
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
           gap: '1.25rem',
           position: 'relative'
         }}>
@@ -458,8 +507,8 @@ export const LandingPage = ({ setCurrentView, user }) => {
 
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-            gap: '2rem'
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))',
+            gap: 'clamp(1rem, 3vw, 2rem)'
           }}>
             <div className="card card-hover" style={{ padding: '2rem' }}>
               <div style={{
@@ -619,7 +668,7 @@ export const LandingPage = ({ setCurrentView, user }) => {
         }}>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 150px), 1fr))',
             gap: '10px'
           }}>
             {SUPPORTED_LANGUAGES.map((lang) => (

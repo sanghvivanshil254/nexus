@@ -5,7 +5,7 @@
 
 // Base API endpoint - uses proxy path /api by default, or an explicit env override
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
-const DIRECT_BACKEND = 'http://127.0.0.1:8000/api';
+const DIRECT_BACKEND = import.meta.env.VITE_DIRECT_BACKEND_URL || 'http://127.0.0.1:8000/api';
 
 /**
  * Robust fetch helper that tries relative proxy first, then direct backend fallback if needed.
@@ -87,6 +87,9 @@ export const nexusApi = {
       throw new Error('Only PDF documents are supported for translation.');
     }
 
+    const currentUser = localStorage.getItem('nexus_ocr_user');
+    const isGuest = !currentUser;
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('src_lang', srcLang);
@@ -94,10 +97,19 @@ export const nexusApi = {
     if (maxPages && Number(maxPages) > 0) {
       formData.append('max_pages', String(maxPages));
     }
+    if (isGuest) {
+      formData.append('is_guest', 'true');
+    }
+
+    const headers = {};
+    if (isGuest) {
+      headers['X-Guest-Mode'] = 'true';
+    }
 
     const res = await request('/translate', {
       method: 'POST',
       body: formData,
+      headers,
     });
     return res.json();
   },
@@ -114,15 +126,33 @@ export const nexusApi = {
   /**
    * Get rendered preview image URL for a specific translated page
    */
-  getRenderedPageUrl(jobId, pageNum = 1) {
-    return `${API_BASE}/jobs/${jobId}/pages/${pageNum}/rendered`;
+  getRenderedPageUrl(jobId, pageNum = 1, timestamp = null) {
+    const qs = timestamp ? `?t=${timestamp}` : '';
+    return `${API_BASE}/jobs/${jobId}/pages/${pageNum}/rendered${qs}`;
+  },
+
+  /**
+   * Direct backend fallback URL (bypasses Vite proxy if needed)
+   */
+  getRenderedPageUrlDirect(jobId, pageNum = 1, timestamp = null) {
+    const qs = timestamp ? `?t=${timestamp}` : '';
+    return `${DIRECT_BACKEND}/jobs/${jobId}/pages/${pageNum}/rendered${qs}`;
   },
 
   /**
    * Get original page preview image URL
    */
-  getOriginalPageUrl(jobId, pageNum = 1) {
-    return `${API_BASE}/jobs/${jobId}/pages/${pageNum}/original`;
+  getOriginalPageUrl(jobId, pageNum = 1, timestamp = null) {
+    const qs = timestamp ? `?t=${timestamp}` : '';
+    return `${API_BASE}/jobs/${jobId}/pages/${pageNum}/original${qs}`;
+  },
+
+  /**
+   * Direct backend fallback URL for original page preview
+   */
+  getOriginalPageUrlDirect(jobId, pageNum = 1, timestamp = null) {
+    const qs = timestamp ? `?t=${timestamp}` : '';
+    return `${DIRECT_BACKEND}/jobs/${jobId}/pages/${pageNum}/original${qs}`;
   },
 
   /**
@@ -180,7 +210,7 @@ export const nexusApi = {
     try {
       // Translation history is only saved persistently if the user is signed in
       const currentUser = localStorage.getItem('nexus_ocr_user');
-      if (!currentUser) {
+      if (!currentUser || job.is_guest || (job.job_id && job.job_id.startsWith('guest_'))) {
         return;
       }
 

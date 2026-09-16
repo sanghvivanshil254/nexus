@@ -49,7 +49,8 @@ class PDFLayoutReconstructor:
         Applies redactions to original text boxes and renders shaped translated text into the identical bboxes.
         """
         tgt = normalize_lang_code(tgt_lang)
-        font_spec = font_manager.get_font_spec_for_lang(tgt)
+        font_spec_sans = font_manager.get_font_spec_for_lang(tgt, is_serif=False)
+        font_spec_serif = font_manager.get_font_spec_for_lang(tgt, is_serif=True)
         font_file = font_manager.get_font_file_for_lang(tgt)
 
         # Step 1: Add redaction annotations for all text blocks that will be translated
@@ -93,98 +94,54 @@ class PDFLayoutReconstructor:
         # Step 3: Render shaped text using PyMuPDF Story with HarfBuzz shaping
         try:
             PDFLayoutReconstructor._render_with_story(
-                page, valid_blocks, font_spec, page_analysis
+                page, valid_blocks, font_spec_sans, font_spec_serif, page_analysis
             )
         except Exception as e:
             logger.warning("Story layout rendering fallback to insert_textbox: %s", e)
             PDFLayoutReconstructor._render_with_insert_textbox(page, valid_blocks, font_file)
 
     # ------------------------------------------------------------------ #
-    # Box fitting
+    # Box fitting & Typography
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _collect_obstacles(
-        page_analysis: Dict[str, Any], blocks: List[Dict[str, Any]]
-    ) -> List[pymupdf.Rect]:
-        """Every rect that translated text must not grow into."""
-        obstacles: List[pymupdf.Rect] = []
-        for block in blocks:
-            bbox = block.get("bbox")
-            if bbox:
-                obstacles.append(pymupdf.Rect(bbox))
-        for image in page_analysis.get("image_blocks", []):
-            bbox = image.get("bbox")
-            if bbox:
-                obstacles.append(pymupdf.Rect(bbox))
-        for table in page_analysis.get("tables", []):
-            bbox = table.get("bbox")
-            if bbox:
-                obstacles.append(pymupdf.Rect(bbox))
-        return obstacles
-
-    @staticmethod
-    def _growable_rect(
-        rect: pymupdf.Rect,
-        obstacles: List[pymupdf.Rect],
-        page_rect: pymupdf.Rect,
-    ) -> pymupdf.Rect:
-        """
-        Extends a block's rect downward into genuinely empty space.
-
-        Translated Indic and CJK text commonly needs 30-60% more room than the
-        English source, so a same-size box forces heavy font shrinking. Growing
-        into whitespace below the block preserves the original font size instead.
-        """
-        max_bottom = min(page_rect.y1 - 2.0, rect.y1 + rect.height * LAYOUT_MAX_BOX_GROWTH)
-
-        for other in obstacles:
-            # Only obstacles that start below this block and overlap horizontally
-            if other.y0 < rect.y1 - 0.5:
-                continue
-            if other.x1 <= rect.x0 + 0.5 or other.x0 >= rect.x1 - 0.5:
-                continue
-            max_bottom = min(max_bottom, other.y0 - 1.5)
-
-        if max_bottom <= rect.y1:
-            return pymupdf.Rect(rect)
-        return pymupdf.Rect(rect.x0, rect.y0, rect.x1, max_bottom)
-
-    @staticmethod
-    def _block_html(text: str, font_spec: Optional[FontSpec], font_size: float) -> str:
-        """Builds the Story HTML for one block, honouring script direction."""
+    def _block_html(
+        text: str,
+        font_spec: Optional[FontSpec],
+        font_size: float,
+        is_bold: bool = False,
+        is_italic: bool = False,
+        color: str = "#111",
+        alignment: str = "left",
+        line_height: float = 1.18,
+    ) -> str:
+        """Builds the Story HTML for one block, honouring typography, alignment, and script direction."""
         family = font_spec.family if font_spec else "sans-serif"
         is_rtl = font_spec.is_rtl if font_spec else False
 
-        # RTL scripts need an explicit base direction so the paragraph aligns to
-        # the right margin and line-final punctuation lands on the correct side.
         direction_attr = ' dir="rtl"' if is_rtl else ""
-        text_align = "right" if is_rtl else "left"
+        text_align = "right" if is_rtl else alignment
+        align_extra = "text-justify: inter-word; " if text_align == "justify" else ""
+        weight_style = "font-weight: 700; " if is_bold else "font-weight: 400; "
+        italic_style = "font-style: italic; " if is_italic else "font-style: normal; "
 
         safe_text = html.escape(text).replace("\n", "<br/>")
         return (
             f'<div{direction_attr} style="font-family: {family}, sans-serif; '
-            f'font-size: {font_size:.1f}pt; line-height: 1.35; color: #111; '
-            f'text-align: {text_align};">'
+            f'font-size: {font_size:.1f}pt; line-height: {line_height:.2f}; {weight_style}{italic_style}'
+            f'color: {color}; text-align: {text_align}; {align_extra}">'
             f'{safe_text}</div>'
         )
 
     @staticmethod
     def _fits(html_str: str, user_css: str, rect: pymupdf.Rect) -> bool:
-        """
-        True when the whole fragment fits inside rect.
-
-        Story.place() reports more=1 when content remains unplaced. The writer
-        callback discards anything past the first rect, so an unfitted block
-        loses text silently - this check is what prevents that.
-        """
+        """True when the whole fragment fits inside rect."""
         try:
             story = pymupdf.Story(html=html_str, user_css=user_css, archive=SHARED_ARCHIVE)
             more, _ = story.place(rect)
             return not more
         except Exception as e:
             logger.debug("Story place() probe failed: %s", e)
-            # Assume it fits; the writer below will do its best.
             return True
 
     @staticmethod
@@ -194,26 +151,37 @@ class PDFLayoutReconstructor:
         user_css: str,
         rect: pymupdf.Rect,
         target_size: float,
+        is_bold: bool = False,
+        is_italic: bool = False,
+        color: str = "#111",
+        alignment: str = "left",
+        line_height: float = 1.18,
     ) -> Tuple[float, bool]:
         """
         Largest size <= target_size at which text fits rect.
-
-        Returns (size, fitted). fitted=False means even the minimum size
-        overflows and the block will be truncated.
+        Enforces a minimum font size clamp (at least 85% of target_size) to avoid font shrinking.
         """
         ceiling = max(LAYOUT_FONT_MIN_SIZE, min(target_size, LAYOUT_FONT_MAX_SIZE))
         if PDFLayoutReconstructor._fits(
-            PDFLayoutReconstructor._block_html(text, font_spec, ceiling), user_css, rect
+            PDFLayoutReconstructor._block_html(
+                text, font_spec, ceiling, is_bold=is_bold, is_italic=is_italic,
+                color=color, alignment=alignment, line_height=line_height
+            ),
+            user_css, rect
         ):
             return ceiling, True
 
-        floor = LAYOUT_FONT_MIN_SIZE
+        # Clamp floor to 85% of target_size to prevent excessive font degradation
+        floor = max(LAYOUT_FONT_MIN_SIZE, round(target_size * 0.85 * 2) / 2)
         if not PDFLayoutReconstructor._fits(
-            PDFLayoutReconstructor._block_html(text, font_spec, floor), user_css, rect
+            PDFLayoutReconstructor._block_html(
+                text, font_spec, floor, is_bold=is_bold, is_italic=is_italic,
+                color=color, alignment=alignment, line_height=line_height
+            ),
+            user_css, rect
         ):
             return floor, False
 
-        # Bisect the size ladder; ~5 probes covers 5.0-18.0pt at 0.5pt steps.
         step = LAYOUT_FONT_STEP
         low, high = floor, ceiling
         while high - low > step:
@@ -221,7 +189,11 @@ class PDFLayoutReconstructor:
             if mid <= low or mid >= high:
                 break
             if PDFLayoutReconstructor._fits(
-                PDFLayoutReconstructor._block_html(text, font_spec, mid), user_css, rect
+                PDFLayoutReconstructor._block_html(
+                    text, font_spec, mid, is_bold=is_bold, is_italic=is_italic,
+                    color=color, alignment=alignment, line_height=line_height
+                ),
+                user_css, rect
             ):
                 low = mid
             else:
@@ -236,76 +208,151 @@ class PDFLayoutReconstructor:
     def _render_with_story(
         page: pymupdf.Page,
         blocks: List[Dict[str, Any]],
-        font_spec: Optional[FontSpec],
+        font_spec_sans: Optional[FontSpec],
+        font_spec_serif: Optional[FontSpec],
         page_analysis: Dict[str, Any],
     ):
         """
-        Renders complex scripts using PyMuPDF Story + DocumentWriter with HarfBuzz shaping.
+        Renders complex scripts with OpenType shaping, dynamic font classes (Serif/Sans),
+        justified alignment, and cascading column flow to preserve original 1:1 sizing.
         """
-        user_css = ""
-        if font_spec:
-            user_css = f"""
+        css_rules = []
+        if font_spec_sans:
+            css_rules.append(f"""
         @font-face {{
-            font-family: {font_spec.family};
-            src: url('{font_spec.file_name}');
+            font-family: {font_spec_sans.family};
+            src: url('{font_spec_sans.file_name}');
         }}
-        body {{
-            font-family: {font_spec.family}, sans-serif;
+            """)
+        if font_spec_serif and (not font_spec_sans or font_spec_serif.family != font_spec_sans.family):
+            css_rules.append(f"""
+        @font-face {{
+            font-family: {font_spec_serif.family};
+            src: url('{font_spec_serif.file_name}');
+        }}
+            """)
+        user_css = "\n".join(css_rules) + """
+        body {
             margin: 0;
             padding: 0;
-        }}
+        }
         """
 
-        obstacles = PDFLayoutReconstructor._collect_obstacles(page_analysis, blocks)
+        # Hard obstacles: images, tables, and bottom page margin boundary
+        hard_obstacles = []
+        for image in page_analysis.get("image_blocks", []):
+            if image.get("bbox"):
+                hard_obstacles.append(pymupdf.Rect(image["bbox"]))
+        for table in page_analysis.get("tables", []):
+            if table.get("bbox"):
+                hard_obstacles.append(pymupdf.Rect(table["bbox"]))
+
+        page_safe_bottom = page.rect.y1 * 0.94
+
+        # Sort blocks vertically from top to bottom
+        sorted_blocks = sorted(blocks, key=lambda b: (b.get("bbox", [0, 0, 0, 0])[1], b.get("bbox", [0, 0, 0, 0])[0]))
+
+        # Track accumulated downward shifts for vertical column flow
+        accumulated_shifts = [0.0] * len(sorted_blocks)
+
         out_buf = io.BytesIO()
         writer = pymupdf.DocumentWriter(out_buf)
         rendered_any = False
         truncated = 0
 
-        for block in blocks:
-            bbox = block.get("bbox")
-            text = block.get("translated_text", "").strip()
-            if not bbox or not text:
-                continue
+        try:
+            for i, block in enumerate(sorted_blocks):
+                bbox = block.get("bbox")
+                text = block.get("translated_text", "").strip()
+                if not bbox or not text:
+                    continue
 
-            rect = pymupdf.Rect(bbox)
-            if block.get("is_table"):
-                # Keep table text inside its own cell. Growing downward would
-                # spill into the next row and destroy the column alignment, so
-                # cells are fitted by shrinking the font only.
-                cell_bbox = block.get("cell_bbox")
-                target_rect = pymupdf.Rect(cell_bbox) if cell_bbox else rect
-            else:
-                target_rect = PDFLayoutReconstructor._growable_rect(rect, obstacles, page.rect)
-            orig_font_size = block.get("avg_font_size", 10.0)
+                is_serif = block.get("is_serif", False)
+                is_bold = block.get("is_bold", False)
+                is_italic = block.get("is_italic", False)
+                color = block.get("color", "#111111")
+                alignment = block.get("alignment", "left")
+                orig_font_size = block.get("avg_font_size", 10.0)
 
-            font_size, fitted = PDFLayoutReconstructor._fit_font_size(
-                text, font_spec, user_css, target_rect, orig_font_size
-            )
-            if not fitted:
-                truncated += 1
-                logger.warning(
-                    "Block at %s overflows even at %.1fpt (%d chars); text will be "
-                    "truncated. Original size %.1fpt.",
-                    [round(v) for v in bbox], font_size, len(text), orig_font_size,
+                font_spec = font_spec_serif if is_serif and font_spec_serif else font_spec_sans
+
+                if block.get("is_table"):
+                    cell_bbox = block.get("cell_bbox")
+                    target_rect = pymupdf.Rect(cell_bbox) if cell_bbox else pymupdf.Rect(bbox)
+                else:
+                    shift = accumulated_shifts[i]
+                    current_y0 = bbox[1] + shift
+                    orig_h = bbox[3] - bbox[1]
+                    current_y1 = current_y0 + orig_h
+                    rect = pymupdf.Rect(bbox[0], current_y0, bbox[2], current_y1)
+
+                    # Check nearest hard obstacle below this column block
+                    nearest_obstacle_y = page_safe_bottom
+                    for obs in hard_obstacles:
+                        if obs.y0 > current_y1 - 2.0:
+                            # Check horizontal overlap with column
+                            if not (obs.x1 <= rect.x0 or obs.x0 >= rect.x1):
+                                nearest_obstacle_y = min(nearest_obstacle_y, obs.y0 - 3.0)
+
+                    max_growth = max(0.0, nearest_obstacle_y - current_y1)
+                    extra_needed = 0.0
+
+                    # Test if text fits at original size with line-height 1.18
+                    html_full = PDFLayoutReconstructor._block_html(
+                        text, font_spec, orig_font_size,
+                        is_bold=is_bold, is_italic=is_italic, color=color, alignment=alignment, line_height=1.18
+                    )
+                    if not PDFLayoutReconstructor._fits(html_full, user_css, rect):
+                        # Probe extra height in progressive steps
+                        for test_extra in [4.0, 8.0, 12.0, 16.0, 22.0, 30.0, 40.0]:
+                            if test_extra > max_growth:
+                                break
+                            test_rect = pymupdf.Rect(rect.x0, rect.y0, rect.x1, rect.y1 + test_extra)
+                            if PDFLayoutReconstructor._fits(html_full, user_css, test_rect):
+                                extra_needed = test_extra
+                                break
+                        if extra_needed == 0.0 and max_growth > 0:
+                            extra_needed = min(max_growth, orig_h * 0.4)
+
+                    target_rect = pymupdf.Rect(rect.x0, rect.y0, rect.x1, rect.y1 + extra_needed)
+
+                    # Propagate shift to subsequent blocks in the same column
+                    if extra_needed > 0.0:
+                        for j in range(i + 1, len(sorted_blocks)):
+                            other_bbox = sorted_blocks[j].get("bbox")
+                            if other_bbox and other_bbox[1] >= bbox[3] - 2.0:
+                                # Horizontal overlap check (same column)
+                                overlap_x = max(0.0, min(bbox[2], other_bbox[2]) - max(bbox[0], other_bbox[0]))
+                                min_w = min(bbox[2] - bbox[0], other_bbox[2] - other_bbox[0])
+                                if min_w > 0 and (overlap_x / min_w) > 0.5:
+                                    accumulated_shifts[j] += extra_needed
+
+                font_size, fitted = PDFLayoutReconstructor._fit_font_size(
+                    text, font_spec, user_css, target_rect, orig_font_size,
+                    is_bold=is_bold, is_italic=is_italic, color=color, alignment=alignment, line_height=1.18
+                )
+                if not fitted:
+                    truncated += 1
+
+                block_html = PDFLayoutReconstructor._block_html(
+                    text, font_spec, font_size,
+                    is_bold=is_bold, is_italic=is_italic, color=color, alignment=alignment, line_height=1.18
                 )
 
-            block_html = PDFLayoutReconstructor._block_html(text, font_spec, font_size)
+                try:
+                    story = pymupdf.Story(html=block_html, user_css=user_css, archive=SHARED_ARCHIVE)
 
-            try:
-                story = pymupdf.Story(html=block_html, user_css=user_css, archive=SHARED_ARCHIVE)
+                    def rfn(n, f, target=target_rect):
+                        if n > 0:
+                            return pymupdf.Rect(), pymupdf.Rect(), None
+                        return page.rect, target, None
 
-                def rfn(n, f, target=target_rect):
-                    if n > 0:
-                        return pymupdf.Rect(), pymupdf.Rect(), None
-                    return page.rect, target, None
-
-                story.write(writer, rfn)
-                rendered_any = True
-            except Exception as block_err:
-                logger.debug("Failed to write block via Story: %s", block_err)
-
-        writer.close()
+                    story.write(writer, rfn)
+                    rendered_any = True
+                except Exception as block_err:
+                    logger.debug("Failed to write block via Story: %s", block_err)
+        finally:
+            writer.close()
 
         if truncated:
             logger.warning("Page %s: %d/%d blocks truncated after font fitting.",
@@ -321,8 +368,20 @@ class PDFLayoutReconstructor:
 
     @staticmethod
     def _render_with_insert_textbox(page: pymupdf.Page, blocks: List[Dict[str, Any]], font_file: Optional[str]):
-        """Fallback renderer using basic insert_textbox."""
-        font_name = "FallbackFont"
+        """Fallback renderer using basic insert_textbox with universal font resolution."""
+        if not font_file:
+            from backend.layout.fonts import WINDOWS_FONTS, FONTS_DIR
+            for candidate in [
+                WINDOWS_FONTS / "Nirmala.ttf",
+                WINDOWS_FONTS / "arial.ttf",
+                WINDOWS_FONTS / "segoeui.ttf",
+                FONTS_DIR / "NotoSansDevanagari-Regular.ttf",
+            ]:
+                if candidate.exists():
+                    font_file = str(candidate)
+                    break
+
+        font_name = "FallbackFont" if font_file else None
         for block in blocks:
             bbox = block.get("bbox")
             translated_text = block.get("translated_text", "")
@@ -332,20 +391,28 @@ class PDFLayoutReconstructor:
             rect = pymupdf.Rect(bbox)
             orig_font_size = block.get("avg_font_size", 10.0)
             current_font_size = max(orig_font_size, LAYOUT_FONT_MIN_SIZE)
-            min_font_size = LAYOUT_FONT_MIN_SIZE
+            min_font_size = max(orig_font_size * 0.85, LAYOUT_FONT_MIN_SIZE)
+
+            align = pymupdf.TEXT_ALIGN_LEFT
+            if block.get("alignment") == "justify":
+                align = pymupdf.TEXT_ALIGN_JUSTIFY
+            elif block.get("alignment") == "center":
+                align = pymupdf.TEXT_ALIGN_CENTER
+            elif block.get("alignment") == "right":
+                align = pymupdf.TEXT_ALIGN_RIGHT
 
             success = False
             while current_font_size >= min_font_size:
                 try:
-                    overflow = page.insert_textbox(
-                        rect,
-                        translated_text,
-                        fontsize=current_font_size,
-                        fontname=font_name,
-                        fontfile=font_file,
-                        align=pymupdf.TEXT_ALIGN_LEFT,
-                        color=(0, 0, 0)
-                    )
+                    kwargs = {
+                        "fontsize": current_font_size,
+                        "align": align,
+                        "color": (0, 0, 0),
+                    }
+                    if font_file:
+                        kwargs["fontfile"] = font_file
+                        kwargs["fontname"] = font_name
+                    overflow = page.insert_textbox(rect, translated_text, **kwargs)
                     if overflow >= 0:
                         success = True
                         break
@@ -355,14 +422,15 @@ class PDFLayoutReconstructor:
 
             if not success:
                 try:
-                    page.insert_textbox(
-                        rect,
-                        translated_text,
-                        fontsize=min_font_size,
-                        fontname=font_name,
-                        fontfile=font_file,
-                        align=pymupdf.TEXT_ALIGN_LEFT,
-                        color=(0, 0, 0)
-                    )
+                    kwargs = {
+                        "fontsize": min_font_size,
+                        "align": align,
+                        "color": (0, 0, 0),
+                    }
+                    if font_file:
+                        kwargs["fontfile"] = font_file
+                        kwargs["fontname"] = font_name
+                    page.insert_textbox(rect, translated_text, **kwargs)
                 except Exception as e:
                     logger.error("Fallback insert_textbox error: %s", e)
+
