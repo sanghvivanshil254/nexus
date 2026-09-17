@@ -84,9 +84,13 @@ export const OcrPipelineDashboard = ({ user }) => {
 
     // Sync recent jobs
     refreshRecentJobs();
-  }, []);
+  }, [user]);
 
   const refreshRecentJobs = () => {
+    if (!user) {
+      setRecentJobs([]);
+      return;
+    }
     const jobs = nexusApi.getLocalJobs();
     setRecentJobs(jobs || []);
   };
@@ -308,23 +312,43 @@ export const OcrPipelineDashboard = ({ user }) => {
   const processSelectedFile = async (file) => {
     if (!file) return;
 
+    // Reject all image formats
+    const isImage = file.type?.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|tiff|svg)$/i.test(file.name);
+    if (isImage) {
+      addToast('Image files (PNG, JPG, etc.) are not supported. Nexus supports document formats (.pdf, .docx, .txt, .doc, .rtf) only.', 'error');
+      return;
+    }
+
+    // Enforce supported document extensions
+    const isDoc = /\.(pdf|docx|doc|txt|rtf|odt)$/i.test(file.name);
+    if (!isDoc) {
+      addToast('Unsupported file format. Nexus supports document files (.pdf, .docx, .txt, .doc, .rtf) only.', 'warning');
+      return;
+    }
+
     if (stagedFileMeta?.previewUrl) {
       try {
         URL.revokeObjectURL(stagedFileMeta.previewUrl);
       } catch {}
     }
 
-    const isPdf = file.name.toLowerCase().endsWith('.pdf');
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    const isPdf = ext === 'pdf';
+    let docTypeLabel = 'PDF Document';
+    if (ext === 'docx' || ext === 'doc') docTypeLabel = 'Word Document (DOCX)';
+    else if (ext === 'txt') docTypeLabel = 'Text Document (TXT)';
+    else if (ext === 'rtf') docTypeLabel = 'Rich Text Document (RTF)';
+    else if (ext === 'odt') docTypeLabel = 'OpenDocument Text (ODT)';
+
     let pageCount = 1;
     let previewUrl = null;
 
-    try {
-      previewUrl = URL.createObjectURL(file);
-    } catch (err) {
-      console.warn('Preview URL generation error:', err);
-    }
-
     if (isPdf) {
+      try {
+        previewUrl = URL.createObjectURL(file);
+      } catch (err) {
+        console.warn('Preview URL generation error:', err);
+      }
       pageCount = await estimatePdfPages(file);
     }
 
@@ -334,8 +358,10 @@ export const OcrPipelineDashboard = ({ user }) => {
       size: file.size,
       pageCount,
       isPdf,
+      ext,
+      docTypeLabel,
       previewUrl,
-      type: file.type || (isPdf ? 'application/pdf' : 'image')
+      type: file.type || `application/${ext}`
     });
 
     addToast(`Document "${file.name}" staged. Review details and click Submit to translate.`, 'info');
@@ -364,27 +390,8 @@ export const OcrPipelineDashboard = ({ user }) => {
       return;
     }
 
-    if (stagedFileMeta?.isPdf) {
-      handleStartPdfTranslation(stagedFile);
-    } else {
-      // Scanned Image OCR
-      addToast(`Extracting text from image ${stagedFile.name}...`, 'info');
-      try {
-        const ocrResult = await runClientSideOCR(stagedFile, pdfSrcLang === 'auto' ? 'en' : pdfSrcLang);
-        setCustomDoc({
-          id: `img-${Date.now()}`,
-          title: stagedFile.name,
-          rawText: ocrResult.rawText,
-          boxes: ocrResult.boxes || [],
-          translations: ocrResult.translations || {}
-        });
-        setActivePdfJob(null);
-        setUploadedPdf(null);
-        addToast(`Extracted ${stagedFile.name} successfully!`, 'success');
-      } catch (err) {
-        addToast('Error during image OCR processing.', 'warning');
-      }
-    }
+    // Submit document directly to the neural translation pipeline
+    handleStartPdfTranslation(stagedFile);
 
     // Clear staging state
     setStagedFile(null);
@@ -600,11 +607,12 @@ export const OcrPipelineDashboard = ({ user }) => {
             </div>
 
             {/* Hidden File Input */}
+            {/* Hidden File Input (Documents Only) */}
             <input
               type="file"
               ref={fileInputRef}
               onChange={handleFileUpload}
-              accept="application/pdf,image/*"
+              accept=".pdf,.docx,.doc,.txt,.rtf,.odt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain,application/rtf,application/vnd.oasis.opendocument.text"
               style={{ display: 'none' }}
             />
 
@@ -633,10 +641,10 @@ export const OcrPipelineDashboard = ({ user }) => {
 
                 <div>
                   <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
-                    Drop your PDF or image here, or <span style={{ color: 'var(--primary)' }}>browse files</span>
+                    Drop your document here, or <span style={{ color: 'var(--primary)' }}>browse files</span>
                   </h3>
                   <p style={{ fontSize: '0.85rem', color: '#94a3b8', margin: 0 }}>
-                    Supports multi-page PDFs with layout preservation and scanned documents (PNG, JPG, WEBP)
+                    Supports PDF, DOCX, DOC, TXT, RTF, and ODT documents with layout preservation (images/PNGs not supported)
                   </p>
                 </div>
 
@@ -709,11 +717,13 @@ export const OcrPipelineDashboard = ({ user }) => {
                         </div>
                       </object>
                     ) : (
-                      <img
-                        src={stagedFileMeta.previewUrl}
-                        alt="Scanned image preview"
-                        style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#f8fafc' }}
-                      />
+                      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', textAlign: 'center', background: '#f8fafc' }}>
+                        <div style={{ width: '56px', height: '56px', borderRadius: '12px', background: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}>
+                          <FileText size={32} />
+                        </div>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>{stagedFileMeta.docTypeLabel}</span>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>{formatFileSize(stagedFileMeta.size)}</span>
+                      </div>
                     )}
 
                     <div style={{
@@ -732,7 +742,7 @@ export const OcrPipelineDashboard = ({ user }) => {
                       pointerEvents: 'none',
                       boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
                     }}>
-                      {stagedFileMeta.isPdf ? `Cover Page (1 / ${stagedFileMeta.pageCount})` : 'Image Preview'}
+                      {stagedFileMeta.isPdf ? `Cover Page (1 / ${stagedFileMeta.pageCount})` : stagedFileMeta.docTypeLabel}
                     </div>
                   </div>
 
@@ -852,8 +862,8 @@ export const OcrPipelineDashboard = ({ user }) => {
 
           </div>
 
-          {/* Recent Translations Section */}
-          {recentJobs.length > 0 && (
+          {/* Recent Translations Section (Only for authenticated users, never for guest sessions) */}
+          {user && recentJobs.length > 0 && (
             <div style={{
               background: '#ffffff',
               borderRadius: '16px',

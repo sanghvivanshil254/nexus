@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   Users, 
@@ -12,12 +12,28 @@ import {
   RefreshCw,
   Database,
   Terminal,
-  Search
+  Search,
+  FileSearch,
+  Globe2,
+  CheckCircle2,
+  Download,
+  Eye,
+  X,
+  AlertTriangle,
+  UserCheck,
+  Sparkles,
+  ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  Lock,
+  Layers,
+  LogIn
 } from 'lucide-react';
 import { useToast } from '../../components/Toast';
 import { useBackendStatus } from '../../hooks/useBackendStatus';
+import { nexusApi } from '../../services/nexusApi';
 
-export const AdminDashboard = ({ currentUser }) => {
+export const AdminDashboard = ({ currentUser, setCurrentView }) => {
   const { addToast } = useToast();
   const { 
     isConnected: isBackendOnline, 
@@ -32,9 +48,18 @@ export const AdminDashboard = ({ currentUser }) => {
     isLoading 
   } = useBackendStatus();
 
-  const [activeAdminTab, setActiveAdminTab] = useState('overview'); // overview, users, models, logs, quotas
+  const [activeAdminTab, setActiveAdminTab] = useState('translations'); // Default to All Translations audit
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('ALL');
+
+  // Translations Audit State (Access to all translations, including guest)
+  const [adminTranslations, setAdminTranslations] = useState([]);
+  const [translationsLoading, setTranslationsLoading] = useState(false);
+  const [translationSearch, setTranslationSearch] = useState('');
+  const [sessionFilter, setSessionFilter] = useState('ALL'); // 'ALL' | 'GUEST' | 'USER'
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'completed' | 'processing' | 'failed'
+  const [inspectJob, setInspectJob] = useState(null);
+  const [inspectPageNum, setInspectPageNum] = useState(1);
 
   // Registered Users: populated from active authenticated session only
   const [usersList, setUsersList] = useState(() => {
@@ -80,6 +105,69 @@ export const AdminDashboard = ({ currentUser }) => {
     addToast(`User account ${name} removed`, 'info');
   };
 
+  // Load all system translations (both registered and guest)
+  const loadAdminTranslations = async () => {
+    if (!currentUser?.isAdmin) return;
+    setTranslationsLoading(true);
+    try {
+      const res = await nexusApi.adminGetAllJobs();
+      if (res && Array.isArray(res.jobs)) {
+        setAdminTranslations(res.jobs);
+      }
+    } catch (e) {
+      console.warn('Failed to load admin translations:', e);
+    } finally {
+      setTranslationsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAdminTranslations();
+  }, [currentUser]);
+
+  const handleAdminDelete = async (jobId) => {
+    if (!window.confirm(`Delete translation record and files for ${jobId}?`)) return;
+    try {
+      await nexusApi.adminDeleteJob(jobId);
+      setAdminTranslations(prev => prev.filter(j => j.job_id !== jobId));
+      addToast(`Translation ${jobId} deleted successfully`, 'success');
+      if (inspectJob?.job_id === jobId) setInspectJob(null);
+    } catch (e) {
+      addToast(`Failed to delete: ${e.message}`, 'error');
+    }
+  };
+
+  const handleAdminPurgeGuests = async () => {
+    if (!window.confirm('Are you sure you want to purge all temporary guest translation files? This action cannot be undone.')) return;
+    try {
+      const res = await nexusApi.adminPurgeGuestJobs();
+      setAdminTranslations(prev => prev.filter(j => !j.is_guest));
+      addToast(res.message || 'Purged all temporary guest files', 'success');
+    } catch (e) {
+      addToast(`Failed to purge guests: ${e.message}`, 'error');
+    }
+  };
+
+  const filteredTranslations = adminTranslations.filter(job => {
+    const s = translationSearch.toLowerCase();
+    const matchesSearch = !s || 
+      (job.job_id && job.job_id.toLowerCase().includes(s)) ||
+      (job.filename && job.filename.toLowerCase().includes(s)) ||
+      (job.tgt_lang && job.tgt_lang.toLowerCase().includes(s)) ||
+      (job.user_email && job.user_email.toLowerCase().includes(s));
+    
+    const matchesSession = sessionFilter === 'ALL' ||
+      (sessionFilter === 'GUEST' && job.is_guest) ||
+      (sessionFilter === 'USER' && !job.is_guest);
+
+    const matchesStatus = statusFilter === 'ALL' || (job.status && job.status.toLowerCase() === statusFilter.toLowerCase());
+
+    return matchesSearch && matchesSession && matchesStatus;
+  });
+
+  const guestTranslationCount = adminTranslations.filter(j => j.is_guest).length;
+  const userTranslationCount = adminTranslations.filter(j => !j.is_guest).length;
+
   const filteredUsers = usersList.filter(u => {
     const matchesSearch = u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
                           u.email.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
@@ -87,6 +175,57 @@ export const AdminDashboard = ({ currentUser }) => {
     const matchesRole = userRoleFilter === 'ALL' || u.role === userRoleFilter;
     return matchesSearch && matchesRole;
   });
+
+  // Strict 403 Gate: Block non-admins from viewing system administration console
+  if (!currentUser?.isAdmin) {
+    return (
+      <div className="container" style={{ paddingTop: '5rem', paddingBottom: '5rem', maxWidth: '640px', margin: '0 auto', textAlign: 'center' }}>
+        <div className="card" style={{ padding: '3.5rem 2rem', borderRadius: '24px', border: '1px solid #fee2e2', background: '#ffffff', boxShadow: '0 20px 25px -5px rgba(239, 68, 68, 0.05)' }}>
+          <div style={{
+            width: '68px',
+            height: '68px',
+            borderRadius: '20px',
+            background: '#fef2f2',
+            color: '#ef4444',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 1.5rem',
+            boxShadow: '0 8px 16px -2px rgba(239, 68, 68, 0.15)'
+          }}>
+            <Lock size={32} />
+          </div>
+          <span className="badge" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', marginBottom: '1rem', fontWeight: 700 }}>
+            HTTP 403 · Access Denied
+          </span>
+          <h2 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.75rem' }}>
+            Administrator Privileges Required
+          </h2>
+          <p style={{ color: '#64748b', fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '2rem' }}>
+            The Admin Console and Global Translation Audit Log are restricted strictly to verified Super Administrators.
+            Guest and standard user sessions cannot inspect system logs or global documents.
+          </p>
+          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setCurrentView ? setCurrentView('login') : null}
+              className="btn btn-primary"
+              style={{ fontWeight: 700, padding: '0.75rem 1.5rem', gap: '8px' }}
+            >
+              <LogIn size={16} />
+              <span>Sign In as Super Admin</span>
+            </button>
+            <button
+              onClick={() => setCurrentView ? setCurrentView('dashboard') : null}
+              className="btn btn-secondary"
+              style={{ fontWeight: 600, padding: '0.75rem 1.5rem' }}
+            >
+              Back to Translation Studio
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container" style={{ paddingTop: '2rem', paddingBottom: '4rem' }}>
@@ -182,7 +321,8 @@ export const AdminDashboard = ({ currentUser }) => {
         paddingBottom: '2px'
       }}>
         {[
-          { id: 'overview', label: 'Cluster Overview & Metrics', icon: Activity },
+          { id: 'overview', label: 'Cluster Overview', icon: Activity },
+          { id: 'translations', label: 'All Translations (Global Audit)', icon: FileSearch, count: adminTranslations.length },
           { id: 'users', label: 'User & Team Management', icon: Users, count: usersList.length },
           { id: 'models', label: 'Model Engines & Pipeline', icon: Cpu },
           { id: 'logs', label: 'Session Event Log', icon: FileText, count: sessionLogs.length },
@@ -354,6 +494,508 @@ export const AdminDashboard = ({ currentUser }) => {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ================= TAB: ALL TRANSLATIONS (GLOBAL AUDIT) ================= */}
+      {activeAdminTab === 'translations' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+          
+          {/* Top Audit Stats Cards */}
+          <div className="metrics-grid">
+            <div className="card" style={{ padding: '1.25rem 1.5rem', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Total Translations</span>
+                <FileSearch size={18} color="#2563eb" />
+              </div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.2rem' }}>
+                {adminTranslations.length}
+              </div>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>
+                Across entire system
+              </span>
+            </div>
+
+            <div className="card" style={{ padding: '1.25rem 1.5rem', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Guest Sessions</span>
+                <Sparkles size={18} color="#8b5cf6" />
+              </div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#8b5cf6', marginBottom: '0.2rem' }}>
+                {guestCount}
+              </div>
+              <span style={{ fontSize: '0.72rem', color: '#8b5cf6', fontWeight: 600 }}>
+                Anonymous ephemeral runs
+              </span>
+            </div>
+
+            <div className="card" style={{ padding: '1.25rem 1.5rem', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Registered Users</span>
+                <UserCheck size={18} color="#059669" />
+              </div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#059669', marginBottom: '0.2rem' }}>
+                {userCount}
+              </div>
+              <span style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600 }}>
+                Authenticated accounts
+              </span>
+            </div>
+
+            <div className="card" style={{ padding: '1.25rem 1.5rem', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Completed</span>
+                <CheckCircle2 size={18} color="#10b981" />
+              </div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#10b981', marginBottom: '0.2rem' }}>
+                {completedCount}
+              </div>
+              <span style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>
+                {adminTranslations.length > 0 ? `${Math.round((completedCount / adminTranslations.length) * 100)}% Success Rate` : '100%'}
+              </span>
+            </div>
+          </div>
+
+          {/* Search & Filter Toolbar */}
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            border: '1px solid #e2e8f0',
+            padding: '1.1rem 1.25rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 260px', width: '100%', minWidth: 'min(100%, 260px)' }}>
+              <div className="input-wrapper" style={{ width: '100%' }}>
+                <Search size={16} className="input-icon" />
+                <input
+                  type="text"
+                  placeholder="Search by file name, Job ID, or email..."
+                  value={translationSearch}
+                  onChange={(e) => setTranslationSearch(e.target.value)}
+                  className="form-input input-with-icon"
+                  style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem 0.5rem 2.4rem' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Session:</span>
+                <select
+                  value={sessionFilter}
+                  onChange={(e) => setSessionFilter(e.target.value)}
+                  className="form-select"
+                  style={{ fontSize: '0.82rem', padding: '0.45rem 0.8rem', minWidth: '150px' }}
+                >
+                  <option value="ALL">All Sessions ({adminTranslations.length})</option>
+                  <option value="GUEST">Guest Sessions ({guestCount})</option>
+                  <option value="USER">Registered Users ({userCount})</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Status:</span>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="form-select"
+                  style={{ fontSize: '0.82rem', padding: '0.45rem 0.8rem', minWidth: '130px' }}
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="completed">Completed</option>
+                  <option value="processing">Processing</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+
+              <button
+                onClick={() => {
+                  loadAdminTranslations();
+                  addToast('Refreshed global translations list', 'info');
+                }}
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '7px 12px', gap: '6px' }}
+                title="Refresh Translations"
+              >
+                <RefreshCw size={14} style={{ animation: translationsLoading ? 'spin 1s linear infinite' : 'none' }} />
+                <span>Refresh</span>
+              </button>
+
+              <button
+                onClick={handleAdminPurgeGuests}
+                className="btn btn-sm"
+                style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', fontWeight: 600, padding: '7px 12px', gap: '6px' }}
+                title="Purge all temporary guest session outputs"
+              >
+                <Trash2 size={14} />
+                <span>Purge Guests</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Translations Table */}
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            border: '1px solid #e2e8f0',
+            boxShadow: 'var(--shadow-sm)',
+            overflow: 'hidden'
+          }}>
+            <div className="table-responsive">
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>JOB ID & SESSION</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>DOCUMENT</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>LANGUAGE</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>PAGES & PROGRESS</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>STATUS</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>ADMIN ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTranslations.length > 0 ? (
+                    filteredTranslations.map((job) => {
+                      const isGuest = job.is_guest;
+                      const isDone = job.status === 'completed';
+                      return (
+                        <tr
+                          key={job.job_id}
+                          style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          {/* Job ID & Session Type */}
+                          <td style={{ padding: '12px 16px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.82rem', color: '#0f172a' }}>
+                                {job.job_id}
+                              </span>
+                              {isGuest ? (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '0.7rem',
+                                  padding: '1px 7px',
+                                  borderRadius: '6px',
+                                  background: '#f5f3ff',
+                                  color: '#7c3aed',
+                                  border: '1px solid #ddd6fe',
+                                  fontWeight: 600,
+                                  width: 'fit-content'
+                                }}>
+                                  <Sparkles size={11} />
+                                  <span>Guest Session</span>
+                                </span>
+                              ) : (
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '0.7rem',
+                                  padding: '1px 7px',
+                                  borderRadius: '6px',
+                                  background: '#eff6ff',
+                                  color: '#2563eb',
+                                  border: '1px solid #bfdbfe',
+                                  fontWeight: 600,
+                                  width: 'fit-content'
+                                }}>
+                                  <UserCheck size={11} />
+                                  <span>{job.user_email || 'Authenticated User'}</span>
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Document Name & Size */}
+                          <td style={{ padding: '12px 16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <FileText size={16} color="#2563eb" style={{ flexShrink: 0 }} />
+                              <div style={{ minWidth: 0, maxWidth: '240px' }}>
+                                <span style={{ fontWeight: 600, color: '#0f172a', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={job.filename}>
+                                  {job.filename}
+                                </span>
+                                <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                                  {job.file_size ? `${(job.file_size / (1024 * 1024)).toFixed(2)} MB` : '–'}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Languages */}
+                          <td style={{ padding: '12px 16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span className="badge badge-neutral" style={{ textTransform: 'uppercase', fontSize: '0.72rem' }}>
+                                {job.src_lang || 'en'}
+                              </span>
+                              <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>&rarr;</span>
+                              <span className="badge badge-primary" style={{ textTransform: 'uppercase', fontSize: '0.72rem' }}>
+                                {job.tgt_lang || 'gu'}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Pages & Progress */}
+                          <td style={{ padding: '12px 16px' }}>
+                            <div style={{ minWidth: '120px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#64748b', marginBottom: '3px' }}>
+                                <span>Pages: {job.completed_pages || job.total_pages || 1} / {job.total_pages || 1}</span>
+                                <span>{Math.round(job.progress || (isDone ? 100 : 0))}%</span>
+                              </div>
+                              <div style={{ height: '5px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
+                                <div style={{
+                                  height: '100%',
+                                  width: `${Math.round(job.progress || (isDone ? 100 : 0))}%`,
+                                  background: isDone ? '#10b981' : '#2563eb',
+                                  borderRadius: '4px',
+                                  transition: 'width 0.3s ease'
+                                }} />
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Status */}
+                          <td style={{ padding: '12px 16px' }}>
+                            <span className={`badge ${isDone ? 'badge-success' : job.status === 'failed' ? 'badge-danger' : 'badge-primary'}`}>
+                              {(job.status || 'PENDING').toUpperCase()}
+                            </span>
+                          </td>
+
+                          {/* Admin Action Buttons */}
+                          <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                              <button
+                                onClick={() => {
+                                  setInspectJob(job);
+                                  setInspectPageNum(1);
+                                }}
+                                className="btn btn-ghost btn-sm"
+                                title="Inspect Rendered Pages"
+                                style={{ color: '#2563eb', padding: '5px 8px', gap: '4px' }}
+                              >
+                                <Eye size={14} />
+                                <span>Inspect</span>
+                              </button>
+
+                              {job.has_output && (
+                                <button
+                                  onClick={() => nexusApi.downloadTranslatedPdf(job.job_id, `admin_export_${job.filename}`)}
+                                  className="btn btn-ghost btn-sm"
+                                  title="Download Translated PDF"
+                                  style={{ color: '#059669', padding: '5px 8px', gap: '4px' }}
+                                >
+                                  <Download size={14} />
+                                  <span>PDF</span>
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => handleAdminDelete(job.job_id)}
+                                className="btn btn-ghost btn-sm"
+                                title="Delete Translation Record and Files"
+                                style={{ color: '#ef4444', padding: '5px 8px' }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8' }}>
+                        No translation logs matching current filter criteria.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Interactive Inspection Modal for Admin */}
+          {inspectJob && (
+            <div style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(5px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              padding: '1.5rem'
+            }}>
+              <div style={{
+                background: '#ffffff',
+                borderRadius: '20px',
+                maxWidth: '900px',
+                width: '100%',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+                border: '1px solid #e2e8f0',
+                overflow: 'hidden'
+              }}>
+                {/* Modal Header */}
+                <div style={{
+                  padding: '1.25rem 1.75rem',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: '#f8fafc'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      background: inspectJob.is_guest ? '#f5f3ff' : '#eff6ff',
+                      color: inspectJob.is_guest ? '#7c3aed' : '#2563eb',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <FileSearch size={18} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+                        {inspectJob.filename}
+                      </h3>
+                      <div style={{ display: 'flex', gap: '8px', fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)' }}>{inspectJob.job_id}</span>
+                        <span>&bull;</span>
+                        <span>{inspectJob.is_guest ? 'Guest Session' : inspectJob.user_email}</span>
+                        <span>&bull;</span>
+                        <span>{(inspectJob.src_lang || 'en').toUpperCase()} &rarr; {(inspectJob.tgt_lang || 'gu').toUpperCase()}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setInspectJob(null)}
+                    style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {/* Modal Body: Page Navigation & Preview Canvas */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  
+                  {/* Page Selector Toolbar */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 14px',
+                    background: '#f1f5f9',
+                    borderRadius: '10px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        onClick={() => setInspectPageNum(p => Math.max(1, p - 1))}
+                        disabled={inspectPageNum <= 1}
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '4px 8px' }}
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
+                        Page {inspectPageNum} of {inspectJob.total_pages || 1}
+                      </span>
+                      <button
+                        onClick={() => setInspectPageNum(p => Math.min(inspectJob.total_pages || 1, p + 1))}
+                        disabled={inspectPageNum >= (inspectJob.total_pages || 1)}
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '4px 8px' }}
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {inspectJob.has_output && (
+                        <button
+                          onClick={() => nexusApi.downloadTranslatedPdf(inspectJob.job_id, `translated_${inspectJob.filename}`)}
+                          className="btn btn-primary btn-sm"
+                          style={{ padding: '5px 12px', gap: '6px' }}
+                        >
+                          <Download size={14} />
+                          <span>Download Output PDF</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Rendered Preview Image Container */}
+                  <div style={{
+                    minHeight: '400px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: '#e2e8f0',
+                    borderRadius: '12px',
+                    padding: '1rem',
+                    overflow: 'auto'
+                  }}>
+                    <img
+                      src={`http://127.0.0.1:8000/api/jobs/${inspectJob.job_id}/pages/${inspectPageNum}/rendered?t=${Date.now()}`}
+                      alt={`Rendered Page ${inspectPageNum}`}
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '520px',
+                        objectFit: 'contain',
+                        borderRadius: '6px',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                        background: '#ffffff'
+                      }}
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        const fallbackEl = e.target.parentElement.querySelector('.preview-error');
+                        if (fallbackEl) fallbackEl.style.display = 'block';
+                      }}
+                    />
+                    <div className="preview-error" style={{ display: 'none', textAlign: 'center', color: '#64748b' }}>
+                      <AlertTriangle size={32} color="#f59e0b" style={{ marginBottom: '0.5rem' }} />
+                      <p style={{ fontSize: '0.9rem', margin: 0 }}>Rendered page image preview not yet generated or file was deleted.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div style={{
+                  padding: '1rem 1.75rem',
+                  borderTop: '1px solid #e2e8f0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  background: '#f8fafc'
+                }}>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    Output: {inspectJob.output_file || 'In-Memory Pipeline'}
+                  </span>
+                  <button
+                    onClick={() => setInspectJob(null)}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    Close Preview
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       )}
 

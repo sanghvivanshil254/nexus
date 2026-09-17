@@ -785,11 +785,18 @@ a:hover {
   }
 }
 
-/* 8. Responsive Table Utilities */
+/* 8. Responsive Table & Grid Utilities */
 .table-responsive {
   width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 1.25rem;
+  margin-bottom: 2rem;
 }
 
 /* 9. Touch-friendly Buttons on Mobile */
@@ -1019,6 +1026,161 @@ a:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   SCROLL-DRIVEN ANIMATIONS (scroll-driven-animations.style)
+   ========================================================= */
+
+@keyframes scroll-reading-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.scroll-progress-line {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3.5px;
+  background: linear-gradient(90deg, #2563eb 0%, #7c3aed 35%, #06b6d4 70%, #10b981 100%);
+  transform-origin: 0% 50%;
+  z-index: 9999;
+  pointer-events: none;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
+}
+
+@keyframes scroll-reveal-entry {
+  from {
+    opacity: 0;
+    transform: translateY(35px) scale(0.97);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes scroll-reveal-clip {
+  from {
+    opacity: 0;
+    clip-path: inset(20% 0% 0% 0% round 18px);
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0% 0% 0% 0% round 18px);
+    transform: translateY(0);
+  }
+}
+
+@keyframes sda-parallax-shift {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-40px);
+  }
+}
+
+@keyframes sda-hero-glow-expand {
+  from {
+    transform: scale(0.9) rotate(0deg);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(1.25) rotate(25deg);
+    opacity: 0.2;
+  }
+}
+
+/* Native CSS Scroll-Driven Animations */
+@supports (animation-timeline: scroll()) {
+  .scroll-progress-line {
+    animation: scroll-reading-progress auto linear both;
+    animation-timeline: scroll(root);
+  }
+  .sda-hero-parallax {
+    animation: sda-parallax-shift auto linear both;
+    animation-timeline: scroll(root);
+  }
+  .sda-hero-glow {
+    animation: sda-hero-glow-expand auto linear both;
+    animation-timeline: scroll(root);
+  }
+}
+
+@supports ((animation-timeline: view()) and (animation-range: entry)) {
+  .sda-reveal {
+    animation: scroll-reveal-entry auto cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-timeline: view();
+    animation-range: entry 10% entry 75%;
+  }
+
+  .sda-reveal-clip {
+    animation: scroll-reveal-clip auto cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-timeline: view();
+    animation-range: entry 5% entry 80%;
+  }
+}
+
+/* Progressive Fallback Class via IntersectionObserver */
+.sda-fallback-hidden {
+  opacity: 0;
+  transform: translateY(30px) scale(0.97);
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sda-fallback-visible {
+  opacity: 1 !important;
+  transform: translateY(0) scale(1) !important;
+}
+
+/* Horizontal Stepped Carousel */
+.sda-carousel-track {
+  display: flex;
+  gap: 1.25rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 0.5rem 0.25rem 1.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sda-carousel-item {
+  scroll-snap-align: start;
+  flex: 0 0 clamp(260px, 28vw, 320px);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sda-carousel-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.12);
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .scroll-progress-line,
+  .sda-reveal,
+  .sda-reveal-clip,
+  .sda-hero-parallax,
+  .sda-hero-glow,
+  .sda-fallback-hidden {
+    animation: none !important;
+    transform: none !important;
+    clip-path: none !important;
+    opacity: 1 !important;
+    filter: none !important;
+    transition: none !important;
+  }
+}
+
 
 
 

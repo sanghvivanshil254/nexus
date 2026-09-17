@@ -45,13 +45,21 @@ PIPELINE_SEMAPHORE = threading.Semaphore(MAX_CONCURRENT_JOBS)
 
 def process_pdf_background(job_id: str, file_path: str, src_lang: str, tgt_lang: str, max_pages: Optional[int], is_guest: bool = False):
     from backend.db.mongo import guest_context_var
+    from backend.pipeline.doc_converter import convert_document_to_pdf
     guest_context_var.set(is_guest)
     logger.info("Job %s waiting for pipeline concurrency slot...", job_id)
     with PIPELINE_SEMAPHORE:
         logger.info("Job %s acquired pipeline slot. Processing...", job_id)
         try:
+            pdf_path_to_process = file_path
+            p = Path(file_path)
+            if p.suffix.lower() != ".pdf":
+                converted_pdf = p.with_suffix(".converted.pdf")
+                convert_document_to_pdf(p, converted_pdf)
+                pdf_path_to_process = str(converted_pdf)
+
             document_processor.process_document(
-                input_pdf_path=file_path,
+                input_pdf_path=pdf_path_to_process,
                 src_lang=src_lang,
                 tgt_lang=tgt_lang,
                 job_id=job_id,
@@ -173,10 +181,22 @@ async def translate_pdf(
     tgt_lang: str = Form("gu"),
     max_pages: Optional[int] = Form(None),
     is_guest: bool = Form(False),
+    user_email: Optional[str] = Form(None),
+    user_name: Optional[str] = Form(None),
     x_guest_mode: Optional[str] = Header(None)
 ):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    from backend.pipeline.doc_converter import is_image_file, is_supported_document, SUPPORTED_DOC_EXTENSIONS
+    
+    if is_image_file(file.filename):
+        raise HTTPException(
+            status_code=400, 
+            detail="Image files (.png, .jpg, etc.) are not supported. Nexus supports document formats (.pdf, .docx, .txt, .doc, .rtf, .odt) only."
+        )
+    if not is_supported_document(file.filename):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Unsupported format '{Path(file.filename).suffix}'. Nexus supports document formats (.pdf, .docx, .txt, .doc, .rtf, .odt) only."
+        )
 
     guest_mode = is_guest or (x_guest_mode and x_guest_mode.lower() == "true")
     prefix = "guest" if guest_mode else "job"
@@ -187,8 +207,25 @@ async def translate_pdf(
     with open(save_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    mongo_db.create_job(job_id, file.filename, src_lang, tgt_lang, is_guest=guest_mode)
-    logger.info("Created %s translation task: %s for %s", "GUEST (in-memory temporary)" if guest_mode else "USER", job_id, file.filename)
+    if save_path.stat().st_size == 0:
+        save_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="The uploaded document is empty (0 bytes).")
+
+    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+    if save_path.stat().st_size > MAX_FILE_SIZE:
+        save_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Document exceeds maximum file size limit (100 MB).")
+
+    mongo_db.create_job(
+        job_id, 
+        file.filename, 
+        src_lang, 
+        tgt_lang, 
+        is_guest=guest_mode,
+        user_email=user_email,
+        user_name=user_name
+    )
+    logger.info("Created %s translation task: %s for %s (user=%s)", "GUEST" if guest_mode else "USER", job_id, file.filename, user_email or "guest")
 
     background_tasks.add_task(
         process_pdf_background,
@@ -248,14 +285,18 @@ def find_job_input_pdf(job_id: str) -> Optional[Path]:
     if job and job.get("filename"):
         for folder in [UPLOADS_DIR, GUEST_TMP_DIR]:
             p = folder / job["filename"]
-            if p.exists():
+            if p.exists() and p.suffix.lower() == ".pdf":
                 return p
+            p_conv = p.with_suffix(".converted.pdf")
+            if p_conv.exists():
+                return p_conv
             for cand in folder.glob(f"*{job['filename']}*"):
                 if cand.exists() and cand.suffix.lower() == ".pdf":
                     return cand
     return None
 
 @app.get("/api/jobs/{job_id}")
+@app.get("/api/jobs/{job_id}/status")
 def get_job_status(job_id: str):
     job = mongo_db.get_job(job_id)
     out_pdf = find_job_output_pdf(job_id)
@@ -560,3 +601,182 @@ def download_translated_pdf(job_id: str):
         media_type="application/pdf",
         filename=out_pdf.name
     )
+
+
+def verify_admin_role(x_admin_role: Optional[str] = Header(None)):
+    if not x_admin_role or x_admin_role.strip().lower() != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Administrative privileges required to audit global translations."
+        )
+
+
+@app.get("/api/admin/jobs")
+def get_all_admin_jobs(x_admin_role: Optional[str] = Header(None)):
+    """
+    Returns all translations across the entire system for administrative auditing:
+    - Jobs in MongoDB
+    - Jobs in memory
+    - Guest sessions (ephemeral in memory or output/tmp)
+    - On-disk translated PDFs in output/ and output/tmp/
+    """
+    verify_admin_role(x_admin_role)
+    import re
+    raw_jobs = mongo_db.get_all_jobs(include_guest=True)
+    jobs_by_id = {j["job_id"]: dict(j) for j in raw_jobs if "job_id" in j}
+
+    # Discover and sync all PDF files in output/ and output/tmp/
+    for folder, is_guest_folder in [(OUTPUT_DIR, False), (OUTPUT_TMP_DIR, True)]:
+        if not folder.exists():
+            continue
+        for pdf_path in folder.glob("*.pdf"):
+            if not pdf_path.is_file() or pdf_path.stat().st_size == 0:
+                continue
+            stem = pdf_path.stem
+            
+            job_id = None
+            if stem.startswith("job_") or stem.startswith("guest_"):
+                parts = stem.split("_")
+                if len(parts) >= 2:
+                    job_id = f"{parts[0]}_{parts[1]}"
+            elif "_job_" in stem or "_guest_" in stem:
+                m = re.search(r"(job_[a-f0-9]+|guest_[a-f0-9]+)", stem)
+                if m:
+                    job_id = m.group(1)
+            else:
+                job_id = f"disk_{pdf_path.name[:20]}"
+
+            is_guest = is_guest_folder or (job_id and job_id.startswith("guest_"))
+
+            if job_id not in jobs_by_id:
+                total_p = 1
+                try:
+                    doc = pymupdf.open(str(pdf_path))
+                    total_p = len(doc)
+                    doc.close()
+                except Exception:
+                    pass
+
+                tgt_lang = "gu"
+                for code, meta in [("gu", "Gujarati"), ("hi", "Hindi"), ("ru", "Russian"), ("es", "Spanish"), ("ar", "Arabic"), ("ja", "Japanese")]:
+                    if meta.lower() in stem.lower() or f"_{code}_" in stem.lower():
+                        tgt_lang = code
+                        break
+
+                jobs_by_id[job_id] = {
+                    "job_id": job_id,
+                    "filename": pdf_path.name,
+                    "src_lang": "en",
+                    "tgt_lang": tgt_lang,
+                    "status": "completed",
+                    "progress": 100.0,
+                    "total_pages": total_p,
+                    "completed_pages": total_p,
+                    "created_at": pdf_path.stat().st_mtime,
+                    "updated_at": pdf_path.stat().st_mtime,
+                    "output_file": str(pdf_path),
+                    "is_guest": is_guest,
+                    "user_email": "Guest Session" if is_guest else "Admin / Local System",
+                    "user_name": "Guest User" if is_guest else "System Admin",
+                }
+            else:
+                existing = jobs_by_id[job_id]
+                existing["output_file"] = str(pdf_path)
+                if not existing.get("total_pages") or existing["total_pages"] == 0:
+                    try:
+                        doc = pymupdf.open(str(pdf_path))
+                        existing["total_pages"] = len(doc)
+                        if existing.get("status") == "completed":
+                            existing["completed_pages"] = len(doc)
+                        doc.close()
+                    except Exception:
+                        pass
+
+    all_jobs = list(jobs_by_id.values())
+    for j in all_jobs:
+        jid = j.get("job_id", "")
+        j["is_guest"] = bool(j.get("is_guest") or jid.startswith("guest_"))
+        j["download_url"] = f"/api/jobs/{jid}/download"
+        j["rendered_preview_url"] = f"/api/jobs/{jid}/pages/1/rendered"
+        
+        out_path = find_job_output_pdf(jid)
+        if out_path and out_path.exists():
+            j["has_output"] = True
+            j["file_size"] = out_path.stat().st_size
+            j["output_filename"] = out_path.name
+        else:
+            j["has_output"] = False
+            j["file_size"] = 0
+
+    all_jobs.sort(key=lambda x: x.get("created_at") or 0, reverse=True)
+
+    guest_count = sum(1 for j in all_jobs if j.get("is_guest"))
+    user_count = sum(1 for j in all_jobs if not j.get("is_guest"))
+
+    return {
+        "total": len(all_jobs),
+        "guest_count": guest_count,
+        "user_count": user_count,
+        "jobs": all_jobs
+    }
+
+
+@app.delete("/api/admin/jobs/{job_id}")
+def admin_delete_job(job_id: str, x_admin_role: Optional[str] = Header(None)):
+    verify_admin_role(x_admin_role)
+    mongo_db.delete_job(job_id)
+
+    deleted_files = []
+    for folder in [OUTPUT_DIR, OUTPUT_TMP_DIR, UPLOADS_DIR, GUEST_TMP_DIR]:
+        if not folder.exists():
+            continue
+        for p in folder.glob(f"*{job_id}*"):
+            try:
+                if p.is_file():
+                    p.unlink()
+                    deleted_files.append(str(p.name))
+                elif p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+            except Exception as e:
+                logger.warning("Failed to delete %s: %s", p, e)
+
+    preview_dir = PREVIEWS_DIR / job_id
+    if preview_dir.exists():
+        shutil.rmtree(preview_dir, ignore_errors=True)
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "deleted_files_count": len(deleted_files)
+    }
+
+
+@app.post("/api/admin/jobs/purge-guests")
+def admin_purge_guest_jobs(x_admin_role: Optional[str] = Header(None)):
+    """Purges all guest temporary files and in-memory guest jobs."""
+    verify_admin_role(x_admin_role)
+    purged_count = 0
+    guest_ids = list(mongo_db._guest_jobs.keys())
+    for gid in guest_ids:
+        mongo_db.delete_job(gid)
+        purged_count += 1
+
+    for folder in [OUTPUT_TMP_DIR, GUEST_TMP_DIR]:
+        if not folder.exists():
+            continue
+        for p in folder.glob("guest_*"):
+            try:
+                if p.is_file():
+                    p.unlink()
+                    purged_count += 1
+                elif p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+            except Exception as e:
+                logger.warning("Failed to purge %s: %s", p, e)
+
+    return {
+        "success": True,
+        "purged_count": purged_count,
+        "message": "All guest temporary translations purged."
+    }
+

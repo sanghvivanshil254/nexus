@@ -90,7 +90,7 @@ class MongoDBManager:
         except Exception as e:
             logger.error("Error setting cache: %s", e)
 
-    def create_job(self, job_id: str, filename: str, src_lang: str, tgt_lang: str, total_pages: int = 0, is_guest: bool = False) -> Dict[str, Any]:
+    def create_job(self, job_id: str, filename: str, src_lang: str, tgt_lang: str, total_pages: int = 0, is_guest: bool = False, user_email: Optional[str] = None, user_name: Optional[str] = None) -> Dict[str, Any]:
         is_guest_mode = is_guest or job_id.startswith("guest_") or guest_context_var.get()
         job_doc = {
             "job_id": job_id,
@@ -106,6 +106,8 @@ class MongoDBManager:
             "error": None,
             "output_file": None,
             "is_guest": is_guest_mode,
+            "user_email": user_email or ("Guest Session" if is_guest_mode else "Authenticated User"),
+            "user_name": user_name or ("Guest User" if is_guest_mode else "Nexus User"),
         }
         if is_guest_mode:
             # Strictly temporary in-memory storage (zero database connection/writes)
@@ -116,6 +118,8 @@ class MongoDBManager:
                     "tgt_lang": tgt_lang,
                     "total_pages": total_pages if total_pages > 0 else self._guest_jobs[job_id].get("total_pages", 0),
                     "updated_at": time.time(),
+                    "user_email": job_doc["user_email"],
+                    "user_name": job_doc["user_name"],
                 })
             else:
                 self._guest_jobs[job_id] = job_doc
@@ -134,6 +138,8 @@ class MongoDBManager:
                             "total_pages": total_pages,
                             "updated_at": time.time(),
                             "is_guest": is_guest_mode,
+                            "user_email": job_doc["user_email"],
+                            "user_name": job_doc["user_name"],
                         },
                         "$setOnInsert": {
                             "status": "pending",
@@ -156,6 +162,8 @@ class MongoDBManager:
                     "tgt_lang": tgt_lang,
                     "total_pages": total_pages if total_pages > 0 else self._memory_jobs[job_id].get("total_pages", 0),
                     "updated_at": time.time(),
+                    "user_email": job_doc["user_email"],
+                    "user_name": job_doc["user_name"],
                 })
             else:
                 self._memory_jobs[job_id] = job_doc
@@ -275,5 +283,50 @@ class MongoDBManager:
             logger.error("Error fetching job: %s", e)
             return self._memory_jobs.get(job_id)
 
+    def get_all_jobs(self, include_guest: bool = True) -> List[Dict[str, Any]]:
+        jobs_map: Dict[str, Dict[str, Any]] = {}
+
+        # 1. Fetch persistent jobs from Mongo if available
+        if self.is_connected:
+            try:
+                for doc in self.jobs_col.find({}, {"_id": 0}).sort("created_at", -1):
+                    jid = doc.get("job_id")
+                    if jid:
+                        jobs_map[jid] = doc
+            except Exception as e:
+                logger.error("Error fetching all jobs from Mongo: %s", e)
+
+        # 2. Merge memory-only jobs
+        for jid, job in self._memory_jobs.items():
+            if jid not in jobs_map:
+                jobs_map[jid] = dict(job)
+
+        # 3. Merge guest jobs if requested
+        if include_guest:
+            for jid, job in self._guest_jobs.items():
+                jobs_map[jid] = dict(job)
+
+        result = list(jobs_map.values())
+        result.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+        return result
+
+    def delete_job(self, job_id: str) -> bool:
+        deleted = False
+        if job_id in self._guest_jobs:
+            del self._guest_jobs[job_id]
+            deleted = True
+        if job_id in self._memory_jobs:
+            del self._memory_jobs[job_id]
+            deleted = True
+        if self.is_connected:
+            try:
+                res = self.jobs_col.delete_one({"job_id": job_id})
+                if res.deleted_count > 0:
+                    deleted = True
+            except Exception as e:
+                logger.error("Error deleting job %s from Mongo: %s", job_id, e)
+        return deleted
+
 # Singleton instance
 mongo_db = MongoDBManager()
+

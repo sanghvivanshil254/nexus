@@ -32,13 +32,13 @@ export const Sidebar = ({
   const { isConnected, device, modelTier, languageCount, recheck, isLoading } = useBackendStatus();
 
   const navItems = [
-    { id: 'landing', label: 'Home Overview', icon: Home },
     { id: 'dashboard', label: 'OCR Studio', icon: FileSearch },
     { id: 'batch', label: 'Batch Queue', icon: Layers },
     { id: 'history', label: 'Extraction History', icon: History },
     { id: 'apidocs', label: 'API & Dev Docs', icon: Code2 },
-    // Only show Admin Console if the user is an Admin AND not on the Home Overview page
-    ...(user?.isAdmin && currentView !== 'landing' ? [
+    { id: 'landing', label: 'Home Overview', icon: Home },
+    // Show Admin Console whenever the user is an Admin
+    ...(user?.isAdmin ? [
       { id: 'admin', label: 'Admin Console', icon: ShieldCheck, adminOnly: true }
     ] : [])
   ];

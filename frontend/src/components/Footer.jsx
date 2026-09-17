@@ -2,12 +2,13 @@ import React from 'react';
 import { FileSearch, CheckCircle2, Shield, Zap, Globe, Sparkles } from 'lucide-react';
 
 export const Footer = ({ setCurrentView, user }) => {
-  const handleProtectedNav = (view) => {
-    if (user) {
-      setCurrentView(view);
-    } else {
+  const handleNav = (view) => {
+    if (view === 'history' && !user) {
       setCurrentView('login');
+    } else {
+      setCurrentView(view);
     }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   return (
     <footer style={{
@@ -72,7 +73,7 @@ export const Footer = ({ setCurrentView, user }) => {
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               <li>
                 <button 
-                  onClick={() => handleProtectedNav('dashboard')}
+                  onClick={() => handleNav('dashboard')}
                   style={{ background: 'none', border: 'none', padding: 0, color: '#64748b', cursor: 'pointer', fontSize: '0.875rem', textAlign: 'left' }}
                   onMouseEnter={(e) => e.target.style.color = '#2563eb'}
                   onMouseLeave={(e) => e.target.style.color = '#64748b'}
@@ -82,7 +83,7 @@ export const Footer = ({ setCurrentView, user }) => {
               </li>
               <li>
                 <button 
-                  onClick={() => handleProtectedNav('batch')}
+                  onClick={() => handleNav('batch')}
                   style={{ background: 'none', border: 'none', padding: 0, color: '#64748b', cursor: 'pointer', fontSize: '0.875rem', textAlign: 'left' }}
                   onMouseEnter={(e) => e.target.style.color = '#2563eb'}
                   onMouseLeave={(e) => e.target.style.color = '#64748b'}
@@ -92,7 +93,7 @@ export const Footer = ({ setCurrentView, user }) => {
               </li>
               <li>
                 <button 
-                  onClick={() => handleProtectedNav('history')}
+                  onClick={() => handleNav('history')}
                   style={{ background: 'none', border: 'none', padding: 0, color: '#64748b', cursor: 'pointer', fontSize: '0.875rem', textAlign: 'left' }}
                   onMouseEnter={(e) => e.target.style.color = '#2563eb'}
                   onMouseLeave={(e) => e.target.style.color = '#64748b'}
@@ -102,7 +103,7 @@ export const Footer = ({ setCurrentView, user }) => {
               </li>
               <li>
                 <button 
-                  onClick={() => handleProtectedNav('apidocs')}
+                  onClick={() => handleNav('apidocs')}
                   style={{ background: 'none', border: 'none', padding: 0, color: '#64748b', cursor: 'pointer', fontSize: '0.875rem', textAlign: 'left' }}
                   onMouseEnter={(e) => e.target.style.color = '#2563eb'}
                   onMouseLeave={(e) => e.target.style.color = '#64748b'}
@@ -145,7 +146,7 @@ export const Footer = ({ setCurrentView, user }) => {
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               <li>
                 <button 
-                  onClick={() => setCurrentView('login')}
+                  onClick={() => handleNav('login')}
                   style={{ background: 'none', border: 'none', padding: 0, color: '#64748b', cursor: 'pointer', fontSize: '0.875rem' }}
                   onMouseEnter={(e) => e.target.style.color = '#2563eb'}
                   onMouseLeave={(e) => e.target.style.color = '#64748b'}
@@ -155,7 +156,7 @@ export const Footer = ({ setCurrentView, user }) => {
               </li>
               <li>
                 <button 
-                  onClick={() => setCurrentView('register')}
+                  onClick={() => handleNav('register')}
                   style={{ background: 'none', border: 'none', padding: 0, color: '#64748b', cursor: 'pointer', fontSize: '0.875rem' }}
                   onMouseEnter={(e) => e.target.style.color = '#2563eb'}
                   onMouseLeave={(e) => e.target.style.color = '#64748b'}
@@ -165,7 +166,7 @@ export const Footer = ({ setCurrentView, user }) => {
               </li>
               <li>
                 <button 
-                  onClick={() => setCurrentView('forgetpassword')}
+                  onClick={() => handleNav('forgetpassword')}
                   style={{ background: 'none', border: 'none', padding: 0, color: '#64748b', cursor: 'pointer', fontSize: '0.875rem' }}
                   onMouseEnter={(e) => e.target.style.color = '#2563eb'}
                   onMouseLeave={(e) => e.target.style.color = '#64748b'}

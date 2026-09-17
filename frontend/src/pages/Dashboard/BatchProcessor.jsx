@@ -50,12 +50,36 @@ export const BatchProcessor = () => {
     if (files.length === 0) return;
     e.target.value = '';
 
-    const newItems = files.map((file, idx) => ({
+    // Filter out image files and enforce document formats
+    const validDocs = [];
+    let rejectedImages = 0;
+    for (const file of files) {
+      const isImg = file.type?.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|tiff|svg)$/i.test(file.name);
+      if (isImg) {
+        rejectedImages++;
+        continue;
+      }
+      const isDoc = /\.(pdf|docx|doc|txt|rtf|odt)$/i.test(file.name);
+      if (isDoc) {
+        validDocs.push(file);
+      }
+    }
+
+    if (rejectedImages > 0) {
+      addToast(`${rejectedImages} image file(s) ignored. Only documents (.pdf, .docx, .txt, .doc, .rtf) are supported.`, 'warning');
+    }
+
+    if (validDocs.length === 0) {
+      if (rejectedImages === 0) addToast('No valid document files selected.', 'warning');
+      return;
+    }
+
+    const newItems = validDocs.map((file, idx) => ({
       id: `batch-${Date.now()}-${idx}`,
       fileName: file.name,
       file,
       size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
-      pages: 'Multi-page',
+      pages: file.name.endsWith('.pdf') ? 'Multi-page' : 'Document',
       language: `English → ${targetBatchLang.toUpperCase()}`,
       targetLang: targetBatchLang,
       status: 'QUEUED',
@@ -66,7 +90,7 @@ export const BatchProcessor = () => {
     }));
 
     setQueue((prev) => [...newItems, ...prev]);
-    addToast(`Enqueued ${files.length} document(s) for batch translation!`, 'success');
+    addToast(`Enqueued ${validDocs.length} document(s) for batch translation!`, 'success');
   };
 
   const handleStartBatch = async () => {
@@ -234,7 +258,7 @@ export const BatchProcessor = () => {
           <input
             type="file"
             multiple
-            accept="application/pdf"
+            accept=".pdf,.docx,.doc,.txt,.rtf,.odt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain,application/rtf,application/vnd.oasis.opendocument.text"
             ref={batchFileInputRef}
             onChange={handleBatchFileUpload}
             style={{ display: 'none' }}
@@ -243,11 +267,11 @@ export const BatchProcessor = () => {
           <button
             onClick={() => batchFileInputRef.current?.click()}
             className="btn btn-secondary"
-            title="Enqueue PDF documents"
+            title="Enqueue document files (.pdf, .docx, .txt, .doc, .rtf)"
             style={{ fontWeight: 600 }}
           >
             <Plus size={16} />
-            <span>Add PDF Files</span>
+            <span>Add Documents</span>
           </button>
 
           <button
@@ -361,7 +385,7 @@ export const BatchProcessor = () => {
                   <td colSpan={6} style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8' }}>
                     <Layers size={32} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
                     <div style={{ fontWeight: 600, color: '#475569', fontSize: '0.95rem' }}>Batch Queue Empty</div>
-                    <div style={{ fontSize: '0.8rem', marginTop: '4px' }}>Click "Add PDF Files" above to enqueue real documents for batch OCR and neural translation.</div>
+                    <div style={{ fontSize: '0.8rem', marginTop: '4px' }}>Click "Add Documents" above to enqueue real documents for batch OCR and neural translation.</div>
                   </td>
                 </tr>
               ) : (

@@ -13,7 +13,8 @@ import {
   Eye,
   X,
   Lock,
-  LogIn
+  LogIn,
+  ShieldCheck
 } from 'lucide-react';
 import { useToast } from '../../components/Toast';
 import { nexusApi } from '../../services/nexusApi';
@@ -104,12 +105,12 @@ export const HistoryPage = ({ setCurrentView, user }) => {
         </button>
       </div>
 
-      {/* Guest Mode History Notice */}
-      {!user && (
+      {/* Admin Notice Banner (If user is Admin) */}
+      {user?.isAdmin && (
         <div style={{
-          background: 'linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)',
-          border: '1px solid #bfdbfe',
-          borderRadius: '14px',
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+          border: '1px solid #334155',
+          borderRadius: '16px',
           padding: '1.25rem 1.5rem',
           marginBottom: '1.75rem',
           display: 'flex',
@@ -117,111 +118,185 @@ export const HistoryPage = ({ setCurrentView, user }) => {
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: '1rem',
-          boxShadow: '0 2px 8px rgba(37, 99, 235, 0.05)'
+          boxShadow: '0 4px 14px rgba(15, 23, 42, 0.15)',
+          color: '#ffffff'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <div style={{
               width: '42px',
               height: '42px',
               borderRadius: '10px',
-              background: 'linear-gradient(135deg, #2563eb 0%, #4f46e5 100%)',
-              color: '#ffffff',
+              background: 'rgba(56, 189, 248, 0.15)',
+              color: '#38bdf8',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0
             }}>
-              <Lock size={20} />
+              <ShieldCheck size={22} />
             </div>
             <div>
-              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
-                Account Required to Save Translation History
+              <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 700, color: '#f8fafc' }}>
+                Global Translation Access (Super Admin)
               </h4>
-              <p style={{ margin: '3px 0 0', fontSize: '0.85rem', color: '#64748b' }}>
-                You can freely translate documents in OCR Studio without logging in. To save, audit, and export your translation history across sessions, please sign in.
+              <p style={{ margin: '3px 0 0', fontSize: '0.82rem', color: '#94a3b8' }}>
+                As an Administrator, you have full audit access to all document translations across the cluster, including anonymous guest sessions.
               </p>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => setCurrentView('admin')}
+            className="btn btn-sm"
+            style={{ background: '#2563eb', color: '#ffffff', fontWeight: 700, padding: '8px 16px', gap: '6px' }}
+          >
+            <span>Open Admin Audit Console</span>
+            <ExternalLink size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Guest Mode: Full Authentication Gate */}
+      {!user ? (
+        <div style={{
+          background: '#ffffff',
+          borderRadius: '20px',
+          border: '1px solid #e2e8f0',
+          padding: 'clamp(2rem, 5vw, 3.5rem) 2rem',
+          textAlign: 'center',
+          maxWidth: '680px',
+          margin: '1.5rem auto 3rem',
+          boxShadow: '0 10px 30px -5px rgba(15, 23, 42, 0.05)'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '18px',
+            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+            color: '#2563eb',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 1.5rem',
+            boxShadow: '0 4px 14px rgba(37, 99, 235, 0.15)'
+          }}>
+            <Lock size={30} strokeWidth={2.2} />
+          </div>
+
+          <span className="badge badge-neutral" style={{ marginBottom: '0.75rem', fontWeight: 700 }}>
+            Session-Restricted Feature
+          </span>
+
+          <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.75rem' }}>
+            Account Required for Document History
+          </h2>
+
+          <p style={{ color: '#64748b', fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '2rem', maxWidth: '520px', margin: '0 auto 2rem' }}>
+            Guest sessions are strictly private and temporary — no document history, files, or audit logs are stored. Sign in to your account to retain permanent translation history, view past rendered pages, and export audit trails.
+          </p>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'center', marginBottom: '2.5rem' }}>
             <button
               onClick={() => setCurrentView('login')}
-              className="btn btn-primary btn-sm"
-              style={{ fontWeight: 600, padding: '7px 14px', gap: '6px' }}
+              className="btn btn-primary btn-lg"
+              style={{ fontWeight: 700, minWidth: '160px' }}
             >
-              <LogIn size={14} />
+              <LogIn size={18} />
               <span>Sign In</span>
             </button>
             <button
               onClick={() => setCurrentView('register')}
-              className="btn btn-secondary btn-sm"
-              style={{ fontWeight: 600, padding: '7px 14px' }}
+              className="btn btn-secondary btn-lg"
+              style={{ fontWeight: 700, minWidth: '160px' }}
             >
-              <span>Create Account</span>
+              <span>Create Free Account</span>
             </button>
           </div>
-        </div>
-      )}
 
-      {/* Search & Filter Toolbar */}
-      <div style={{
-        background: '#ffffff',
-        borderRadius: '14px',
-        border: '1px solid #e2e8f0',
-        padding: '1rem 1.25rem',
-        marginBottom: '1.5rem',
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '1rem'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 240px', width: '100%', minWidth: 'min(100%, 240px)' }}>
-          <div className="input-wrapper" style={{ width: '100%' }}>
-            <Search size={16} className="input-icon" />
-            <input
-              type="text"
-              placeholder="Search by file name or document type..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="form-input input-with-icon"
-              style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem 0.5rem 2.4rem' }}
-            />
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: '12px',
+            textAlign: 'left',
+            paddingTop: '1.5rem',
+            borderTop: '1px solid #f1f5f9'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <CheckCircle2 size={16} color="#10b981" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span style={{ fontSize: '0.8rem', color: '#475569' }}>Permanent 90-day cloud audit retention</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <CheckCircle2 size={16} color="#10b981" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span style={{ fontSize: '0.8rem', color: '#475569' }}>Re-download translated PDFs anytime</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <CheckCircle2 size={16} color="#10b981" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span style={{ fontSize: '0.8rem', color: '#475569' }}>OCR confidence & vector layout reports</span>
+            </div>
           </div>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Language Filter:</span>
-          <select
-            value={selectedLangFilter}
-            onChange={(e) => setSelectedLangFilter(e.target.value)}
-            className="form-select"
-            style={{ fontSize: '0.85rem', padding: '0.45rem 0.8rem', minWidth: '140px' }}
-          >
-            <option value="ALL">All Languages</option>
-            <option value="German">German</option>
-            <option value="Hindi">Hindi</option>
-            <option value="Arabic">Arabic</option>
-            <option value="Japanese">Japanese</option>
-            <option value="Spanish">Spanish</option>
-          </select>
-        </div>
-      </div>
-
-      {/* History Records Table */}
-      <div style={{
-        background: '#ffffff',
-        borderRadius: '16px',
-        border: '1px solid #e2e8f0',
-        boxShadow: 'var(--shadow-sm)',
-        overflow: 'hidden'
-      }}>
-        <div className="table-responsive">
-          <table style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontSize: '0.88rem',
-            textAlign: 'left'
+      ) : (
+        <>
+          {/* Search & Filter Toolbar */}
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '14px',
+            border: '1px solid #e2e8f0',
+            padding: '1rem 1.25rem',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem'
           }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 240px', width: '100%', minWidth: 'min(100%, 240px)' }}>
+              <div className="input-wrapper" style={{ width: '100%' }}>
+                <Search size={16} className="input-icon" />
+                <input
+                  type="text"
+                  placeholder="Search your translations by file name..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="form-input input-with-icon"
+                  style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem 0.5rem 2.4rem' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>Language Filter:</span>
+              <select
+                value={selectedLangFilter}
+                onChange={(e) => setSelectedLangFilter(e.target.value)}
+                className="form-select"
+                style={{ fontSize: '0.85rem', padding: '0.45rem 0.8rem', minWidth: '140px' }}
+              >
+                <option value="ALL">All Languages</option>
+                <option value="GU">Gujarati (GU)</option>
+                <option value="HI">Hindi (HI)</option>
+                <option value="RU">Russian (RU)</option>
+                <option value="ES">Spanish (ES)</option>
+                <option value="JA">Japanese (JA)</option>
+                <option value="AR">Arabic (AR)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* History Records Table */}
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            border: '1px solid #e2e8f0',
+            boxShadow: 'var(--shadow-sm)',
+            overflow: 'hidden'
+          }}>
+            <div className="table-responsive">
+              <table style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '0.88rem',
+                textAlign: 'left'
+              }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
                 <th style={{ padding: '12px 16px', fontWeight: 600 }}>DOCUMENT</th>
@@ -312,6 +387,8 @@ export const HistoryPage = ({ setCurrentView, user }) => {
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* Quick View Modal */}
       {previewItem && (

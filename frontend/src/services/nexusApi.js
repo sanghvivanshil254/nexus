@@ -64,30 +64,43 @@ export const nexusApi = {
    * Fetch all 41+ supported languages from backend registry
    */
   async getLanguages() {
-    if (cachedLanguages) {
+    if (cachedLanguages && cachedLanguages.length > 0) {
       return cachedLanguages;
     }
     const res = await request('/languages');
     const data = await res.json();
-    if (data && Array.isArray(data.languages)) {
-      cachedLanguages = data.languages;
+    const list = Array.isArray(data) ? data : (Array.isArray(data?.languages) ? data.languages : []);
+    if (list.length > 0) {
+      cachedLanguages = list;
     }
-    return data.languages || [];
+    return list;
   },
 
   /**
-   * Submit a PDF file for neural translation & layout preservation
-   * @param {File} file - PDF file object
+   * Submit a document file for neural translation & layout preservation
+   * Supports: .pdf, .docx, .doc, .txt, .rtf, .odt
+   * Strictly disallows: image formats (.png, .jpg, etc.)
+   * @param {File} file - Document file object
    * @param {string} srcLang - Source language code (e.g. 'en')
    * @param {string} tgtLang - Target language code (e.g. 'gu', 'hi')
    * @param {number|null} maxPages - Optional max pages limit
    */
   async submitTranslation(file, srcLang = 'en', tgtLang = 'gu', maxPages = null) {
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      throw new Error('Only PDF documents are supported for translation.');
+    const isImage = file.type?.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|tiff|svg)$/i.test(file.name);
+    if (isImage) {
+      throw new Error('Image files (PNG, JPG, etc.) are not supported. Only documents (.pdf, .docx, .txt, .doc, .rtf, .odt) are supported.');
     }
 
-    const currentUser = localStorage.getItem('nexus_ocr_user');
+    const isDoc = /\.(pdf|docx|doc|txt|rtf|odt)$/i.test(file.name);
+    if (!isDoc) {
+      throw new Error('Unsupported document format. Only documents (.pdf, .docx, .txt, .doc, .rtf, .odt) are supported.');
+    }
+
+    const currentUserRaw = localStorage.getItem('nexus_ocr_user');
+    let currentUser = null;
+    try {
+      if (currentUserRaw) currentUser = JSON.parse(currentUserRaw);
+    } catch {}
     const isGuest = !currentUser;
 
     const formData = new FormData();
@@ -99,6 +112,9 @@ export const nexusApi = {
     }
     if (isGuest) {
       formData.append('is_guest', 'true');
+    } else {
+      if (currentUser?.email) formData.append('user_email', currentUser.email);
+      if (currentUser?.name) formData.append('user_name', currentUser.name);
     }
 
     const headers = {};
@@ -195,12 +211,25 @@ export const nexusApi = {
   },
 
   /**
-   * Local history management in localStorage
+   * Local history management in localStorage (RESTRICTED TO AUTHENTICATED USERS)
    */
   getLocalJobs() {
     try {
-      const stored = localStorage.getItem('nexus_translation_jobs');
-      return stored ? JSON.parse(stored) : [];
+      const currentUser = localStorage.getItem('nexus_ocr_user');
+      // Guest sessions DO NOT have history
+      if (!currentUser) {
+        try {
+          localStorage.removeItem('nexus_translation_jobs');
+        } catch {}
+        return [];
+      }
+      const userObj = JSON.parse(currentUser);
+      const userKey = userObj.email ? `nexus_jobs_${userObj.email}` : 'nexus_translation_jobs';
+      const stored = localStorage.getItem(userKey) || localStorage.getItem('nexus_translation_jobs');
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      // Strictly exclude any guest jobs from user history
+      return (parsed || []).filter(j => !j.is_guest && !(j.job_id && j.job_id.startsWith('guest_')));
     } catch {
       return [];
     }
@@ -208,12 +237,14 @@ export const nexusApi = {
 
   saveJobToHistory(job) {
     try {
-      // Translation history is only saved persistently if the user is signed in
       const currentUser = localStorage.getItem('nexus_ocr_user');
+      // Translation history is NEVER saved for guest sessions
       if (!currentUser || job.is_guest || (job.job_id && job.job_id.startsWith('guest_'))) {
         return;
       }
 
+      const userObj = JSON.parse(currentUser);
+      const userKey = userObj.email ? `nexus_jobs_${userObj.email}` : 'nexus_translation_jobs';
       const jobs = this.getLocalJobs();
       const existingIdx = jobs.findIndex(j => j.job_id === job.job_id);
       if (existingIdx >= 0) {
@@ -221,7 +252,7 @@ export const nexusApi = {
       } else {
         jobs.unshift({ ...job, created_at: job.created_at || Date.now() });
       }
-      localStorage.setItem('nexus_translation_jobs', JSON.stringify(jobs.slice(0, 50)));
+      localStorage.setItem(userKey, JSON.stringify(jobs.slice(0, 50)));
     } catch (e) {
       console.warn('Failed to save job to localStorage', e);
     }
@@ -229,10 +260,45 @@ export const nexusApi = {
 
   removeLocalJob(jobId) {
     try {
+      const currentUser = localStorage.getItem('nexus_ocr_user');
+      if (!currentUser) return;
+      const userObj = JSON.parse(currentUser);
+      const userKey = userObj.email ? `nexus_jobs_${userObj.email}` : 'nexus_translation_jobs';
       const jobs = this.getLocalJobs().filter(j => j.job_id !== jobId);
-      localStorage.setItem('nexus_translation_jobs', JSON.stringify(jobs));
+      localStorage.setItem(userKey, JSON.stringify(jobs));
     } catch (e) {
       console.warn('Failed to remove job from localStorage', e);
     }
+  },
+
+  _getAdminHeaders() {
+    try {
+      const user = JSON.parse(localStorage.getItem('nexus_ocr_user') || '{}');
+      if (user?.isAdmin) {
+        return {
+          'X-Admin-Role': 'admin',
+          'X-Admin-Email': user.email || 'admin.root@nexusocr.ai'
+        };
+      }
+    } catch {}
+    return {};
+  },
+
+  /**
+   * Admin Global Translation Audit APIs (Access to all translations, including guest)
+   */
+  async adminGetAllJobs() {
+    const res = await request('/admin/jobs', { headers: this._getAdminHeaders() });
+    return res.json();
+  },
+
+  async adminDeleteJob(jobId) {
+    const res = await request(`/admin/jobs/${jobId}`, { method: 'DELETE', headers: this._getAdminHeaders() });
+    return res.json();
+  },
+
+  async adminPurgeGuestJobs() {
+    const res = await request('/admin/jobs/purge-guests', { method: 'POST', headers: this._getAdminHeaders() });
+    return res.json();
   }
 };
