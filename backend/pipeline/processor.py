@@ -188,7 +188,6 @@ class DocumentProcessor:
         src_lang: str = "en",
         tgt_lang: str = "gu",
         job_id: Optional[str] = None,
-        max_pages: Optional[int] = None,
         output_filename: Optional[str] = None
     ) -> Dict[str, Any]:
         p = Path(input_pdf_path)
@@ -214,8 +213,6 @@ class DocumentProcessor:
         try:
             doc = pymupdf.open(str(p))
             total_pages = len(doc)
-            if max_pages and max_pages > 0:
-                total_pages = min(total_pages, max_pages)
 
             if not output_filename:
                 timestamp_str = time.strftime("%Y%m%d_%H%M%S")

@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   Menu,
   X,
-  Home,
+  Rocket,
   ChevronDown,
   Check
 } from 'lucide-react';
@@ -24,7 +24,7 @@ export const Navbar = ({ currentView, setCurrentView, user, onLogout }) => {
   const dropdownRef = useRef(null);
 
   const navItems = [
-    { id: 'landing', label: 'Home', icon: Home, desc: 'Overview & pipeline architecture' },
+    { id: 'launch', label: 'Launch Page', icon: Rocket, desc: 'Keynote & product architecture' },
     { id: 'dashboard', label: 'OCR Studio', icon: FileSearch, highlight: true, desc: 'Interactive multilingual extraction studio' },
     { id: 'batch', label: 'Batch Queue', icon: Layers, desc: 'High-throughput parallel file processing' },
     { id: 'history', label: 'Extraction History', icon: History, desc: 'Searchable audit logs & records' },

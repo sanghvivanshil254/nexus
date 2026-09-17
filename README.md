@@ -89,9 +89,6 @@ Translate any PDF with automatic layout preservation:
 # Translate English PDF to Gujarati
 python backend/run_pipeline.py --input "testing data/Panchatantra.pdf" --src en --tgt gu
 
-# Translate with page limit (e.g. first 10 pages)
-python backend/run_pipeline.py --input "testing data/Panchatantra.pdf" --src en --tgt gu --pages 10
-
 # Custom output filename
 python backend/run_pipeline.py --input "testing data/Panchatantra.pdf" --src en --tgt gu --output "MyTranslation.pdf"
 ```

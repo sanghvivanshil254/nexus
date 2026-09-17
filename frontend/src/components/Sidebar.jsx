@@ -5,7 +5,7 @@ import {
   History, 
   Code2, 
   ShieldCheck, 
-  Home, 
+  Rocket, 
   LogOut, 
   LogIn,
   Sparkles, 
@@ -32,11 +32,11 @@ export const Sidebar = ({
   const { isConnected, device, modelTier, languageCount, recheck, isLoading } = useBackendStatus();
 
   const navItems = [
+    { id: 'launch', label: 'Launch Page', icon: Rocket },
     { id: 'dashboard', label: 'OCR Studio', icon: FileSearch },
     { id: 'batch', label: 'Batch Queue', icon: Layers },
     { id: 'history', label: 'Extraction History', icon: History },
     { id: 'apidocs', label: 'API & Dev Docs', icon: Code2 },
-    { id: 'landing', label: 'Home Overview', icon: Home },
     // Show Admin Console whenever the user is an Admin
     ...(user?.isAdmin ? [
       { id: 'admin', label: 'Admin Console', icon: ShieldCheck, adminOnly: true }

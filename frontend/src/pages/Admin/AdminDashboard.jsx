@@ -165,8 +165,9 @@ export const AdminDashboard = ({ currentUser, setCurrentView }) => {
     return matchesSearch && matchesSession && matchesStatus;
   });
 
-  const guestTranslationCount = adminTranslations.filter(j => j.is_guest).length;
-  const userTranslationCount = adminTranslations.filter(j => !j.is_guest).length;
+  const guestCount = adminTranslations.filter(j => j.is_guest).length;
+  const userCount = adminTranslations.filter(j => !j.is_guest).length;
+  const completedCount = adminTranslations.filter(j => j.status?.toLowerCase() === 'completed').length;
 
   const filteredUsers = usersList.filter(u => {
     const matchesSearch = u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
@@ -381,7 +382,7 @@ export const AdminDashboard = ({ currentUser, setCurrentView }) => {
                 <Globe2 size={18} color="#2563eb" />
               </div>
               <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.25rem' }}>
-                {languageCount || 41}
+                {languageCount || 27}
               </div>
               <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>
                 22 Indian + Global Languages

@@ -49,7 +49,6 @@ export const OcrPipelineDashboard = ({ user }) => {
   // Translation configuration
   const [pdfSrcLang, setPdfSrcLang] = useState('auto');
   const [pdfTgtLang, setPdfTgtLang] = useState('');
-  const [pdfMaxPages, setPdfMaxPages] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const pollIntervalRef = useRef(null);
 
@@ -269,8 +268,7 @@ export const OcrPipelineDashboard = ({ user }) => {
     addToast(`Submitting ${targetFile.name} to Neural Pipeline...`, 'info');
 
     try {
-      const maxPagesVal = pdfMaxPages && Number(pdfMaxPages) > 0 ? parseInt(pdfMaxPages, 10) : null;
-      const queueRes = await nexusApi.submitTranslation(targetFile, pdfSrcLang, pdfTgtLang, maxPagesVal);
+      const queueRes = await nexusApi.submitTranslation(targetFile, pdfSrcLang, pdfTgtLang);
       const jobId = queueRes.job_id;
 
       const initialJob = {
@@ -517,10 +515,10 @@ export const OcrPipelineDashboard = ({ user }) => {
           {/* Setup & Dropzone Card */}
           <div className="ocr-hub-card" style={{ marginBottom: '2rem' }}>
             
-            {/* Language Selector Controls */}
+            {/* Language Selector Controls (2-Column Balanced Layout) */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
               gap: '1.25rem',
               alignItems: 'center',
               background: '#f8fafc',
@@ -587,22 +585,6 @@ export const OcrPipelineDashboard = ({ user }) => {
                     ))
                   )}
                 </select>
-              </div>
-
-              {/* Optional Page Limit */}
-              <div>
-                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '6px' }}>
-                  PAGE LIMIT (OPTIONAL)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="All pages (or e.g. 5)"
-                  value={pdfMaxPages}
-                  onChange={(e) => setPdfMaxPages(e.target.value)}
-                  className="form-input"
-                  style={{ width: '100%', fontSize: '0.88rem', padding: '0.6rem 0.85rem' }}
-                />
               </div>
             </div>
 

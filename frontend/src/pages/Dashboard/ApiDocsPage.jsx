@@ -67,8 +67,7 @@ with open("Panchatantra.pdf", "rb") as f:
         files={"file": f},
         data={
             "src_lang": "en",
-            "tgt_lang": "gu",  # Supports 22 Indic + Global languages
-            "max_pages": 5      # Optional page range limit
+            "tgt_lang": "gu"  # Supports 22 Indic + Global languages
         }
     )
 
@@ -95,8 +94,7 @@ if status["status"] == "completed":
 curl -X POST "http://localhost:8000/api/translate" \\
   -F "file=@./Panchatantra.pdf" \\
   -F "src_lang=en" \\
-  -F "tgt_lang=gu" \\
-  -F "max_pages=5"
+  -F "tgt_lang=gu"
 
 # Expected Response:
 # {"job_id":"job_9a8b7c6d","filename":"Panchatantra.pdf","status":"queued"}
@@ -119,7 +117,6 @@ async function translateDocument() {
   form.append('file', fs.createReadStream('./Panchatantra.pdf'));
   form.append('src_lang', 'en');
   form.append('tgt_lang', 'gu');
-  form.append('max_pages', '5');
 
   // Submit translation job
   const res = await fetch(\`\${BASE_URL}/api/translate\`, { method: 'POST', body: form });

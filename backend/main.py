@@ -43,7 +43,7 @@ OUTPUT_TMP_DIR.mkdir(parents=True, exist_ok=True)
 
 PIPELINE_SEMAPHORE = threading.Semaphore(MAX_CONCURRENT_JOBS)
 
-def process_pdf_background(job_id: str, file_path: str, src_lang: str, tgt_lang: str, max_pages: Optional[int], is_guest: bool = False):
+def process_pdf_background(job_id: str, file_path: str, src_lang: str, tgt_lang: str, is_guest: bool = False):
     from backend.db.mongo import guest_context_var
     from backend.pipeline.doc_converter import convert_document_to_pdf
     guest_context_var.set(is_guest)
@@ -63,7 +63,7 @@ def process_pdf_background(job_id: str, file_path: str, src_lang: str, tgt_lang:
                 src_lang=src_lang,
                 tgt_lang=tgt_lang,
                 job_id=job_id,
-                max_pages=max_pages
+                max_pages=None
             )
         except Exception as e:
             logger.error("Background translation failed for job %s: %s", job_id, e)
@@ -124,29 +124,11 @@ def get_languages():
         {"code": "sat", "name": "Santali", "language_tag": "sat_Olck", "region": "India", "primary_model": "IndicTrans2 1B"},
 
         # Global & European Languages (Universal Neural Router / OPUS-MT)
-        {"code": "en", "name": "English", "language_tag": "eng_Latn", "region": "Global", "primary_model": "IndicTrans2 / Universal Neural"},
-        {"code": "es", "name": "Spanish", "language_tag": "spa_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
-        {"code": "fr", "name": "French", "language_tag": "fra_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
-        {"code": "de", "name": "German", "language_tag": "deu_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
-        {"code": "it", "name": "Italian", "language_tag": "ita_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
-        {"code": "pt", "name": "Portuguese", "language_tag": "por_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
-        {"code": "nl", "name": "Dutch", "language_tag": "nld_Latn", "region": "Europe", "primary_model": "Universal Neural Router"},
-        {"code": "ru", "name": "Russian", "language_tag": "rus_Cyrl", "region": "Eastern Europe", "primary_model": "Universal Neural Router"},
-        {"code": "uk", "name": "Ukrainian", "language_tag": "ukr_Cyrl", "region": "Eastern Europe", "primary_model": "Universal Neural Router"},
-        {"code": "pl", "name": "Polish", "language_tag": "pol_Latn", "region": "Eastern Europe", "primary_model": "Universal Neural Router"},
-
-        # East Asia & Middle East
-        {"code": "zh", "name": "Chinese (Simplified)", "language_tag": "zho_Hans", "region": "East Asia", "primary_model": "Universal Neural Router"},
-        {"code": "ja", "name": "Japanese", "language_tag": "jpn_Jpan", "region": "East Asia", "primary_model": "Universal Neural Router"},
-        {"code": "ko", "name": "Korean", "language_tag": "kor_Hang", "region": "East Asia", "primary_model": "Universal Neural Router"},
-        {"code": "ar", "name": "Arabic", "language_tag": "arb_Arab", "region": "Middle East", "primary_model": "Universal Neural Router"},
-        {"code": "fa", "name": "Persian", "language_tag": "pes_Arab", "region": "Middle East", "primary_model": "Universal Neural Router"},
-        {"code": "tr", "name": "Turkish", "language_tag": "tur_Latn", "region": "Middle East", "primary_model": "Universal Neural Router"},
-
-        # Africa
-        {"code": "sw", "name": "Swahili", "language_tag": "swh_Latn", "region": "Africa", "primary_model": "Universal Neural Router"},
-        {"code": "yo", "name": "Yoruba", "language_tag": "yor_Latn", "region": "Africa", "primary_model": "Universal Neural Router"},
-        {"code": "zu", "name": "Zulu", "language_tag": "zul_Latn", "region": "Africa", "primary_model": "Universal Neural Router"},
+        {"code": "en", "name": "English", "language_tag": "eng_Latn", "region": "Global", "primary_model": "IndicTrans2 / OPUS-MT"},
+        {"code": "es", "name": "Spanish", "language_tag": "spa_Latn", "region": "Europe", "primary_model": "OPUS-MT / Neural"},
+        {"code": "fr", "name": "French", "language_tag": "fra_Latn", "region": "Europe", "primary_model": "OPUS-MT / Neural"},
+        {"code": "de", "name": "German", "language_tag": "deu_Latn", "region": "Europe", "primary_model": "OPUS-MT / Neural"},
+        {"code": "ru", "name": "Russian", "language_tag": "rus_Cyrl", "region": "Eastern Europe", "primary_model": "OPUS-MT / Neural"},
     ]
     return {"languages": languages, "total": len(languages)}
 
@@ -179,7 +161,6 @@ async def translate_pdf(
     file: UploadFile = File(...),
     src_lang: str = Form("en"),
     tgt_lang: str = Form("gu"),
-    max_pages: Optional[int] = Form(None),
     is_guest: bool = Form(False),
     user_email: Optional[str] = Form(None),
     user_name: Optional[str] = Form(None),
@@ -233,7 +214,6 @@ async def translate_pdf(
         file_path=str(save_path),
         src_lang=src_lang,
         tgt_lang=tgt_lang,
-        max_pages=max_pages,
         is_guest=guest_mode
     )
 

@@ -10,7 +10,7 @@ import { LoginPage } from './pages/Auth/LoginPage';
 import { ForgotPasswordPage } from './pages/Auth/ForgotPasswordPage';
 
 // Main App & Dashboard Pages
-import { LandingPage } from './pages/LandingPage';
+import { LaunchPage } from './pages/LaunchPage';
 import { OcrPipelineDashboard } from './pages/Dashboard/OcrPipelineDashboard';
 import { BatchProcessor } from './pages/Dashboard/BatchProcessor';
 import { HistoryPage } from './pages/Dashboard/HistoryPage';
@@ -21,7 +21,7 @@ import { AdminDashboard } from './pages/Admin/AdminDashboard';
 import { AnimatedHamburger } from './components/AnimatedHamburger';
 
 // Icons for Auth Top Bar & Mobile Trigger
-import { FileSearch, Menu, UserPlus, LogIn } from 'lucide-react';
+import { FileSearch, Menu, UserPlus, LogIn, Rocket } from 'lucide-react';
 
 function AppContent() {
   const [user, setUser] = useState(() => {
@@ -29,18 +29,18 @@ function AppContent() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  // Root view is OCR Studio Workbench ('dashboard') by default
-  const [currentView, setCurrentView] = useState('dashboard');
+  // Root view is Launch Page ('launch') by default
+  const [currentView, setCurrentView] = useState('launch');
 
   const [prefilledEmail, setPrefilledEmail] = useState('');
   const [showRegSuccessBanner, setShowRegSuccessBanner] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
-  // If user is guest, restrict views to translation studio ('dashboard') or auth pages
+  // If user is guest, restrict views to launch page, translation studio ('dashboard') or auth pages
   useEffect(() => {
-    if (!user && !['dashboard', 'login', 'register', 'forgetpassword'].includes(currentView)) {
-      setCurrentView('dashboard');
+    if (!user && !['launch', 'dashboard', 'login', 'register', 'forgetpassword'].includes(currentView)) {
+      setCurrentView('launch');
     }
   }, [user, currentView]);
 
@@ -51,25 +51,20 @@ function AppContent() {
     setCurrentView('login');
   };
 
-  // Step 2: User logs in -> Transition to Dashboard (or Admin Console if admin)
+  // Step 2: User logs in -> Transition to Launch Page (root view)
   const handleLoginSuccess = (userData) => {
     setUser(userData);
     localStorage.setItem('nexus_ocr_user', JSON.stringify(userData));
     setShowRegSuccessBanner(false);
-    
-    if (userData.isAdmin) {
-      setCurrentView('admin');
-    } else {
-      setCurrentView('dashboard');
-    }
+    setCurrentView('launch');
   };
 
-  // User logs out -> Return to clean guest Translation Studio
+  // User logs out -> Return to clean Launch Page
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('nexus_ocr_user');
     setShowRegSuccessBanner(false);
-    setCurrentView('dashboard');
+    setCurrentView('launch');
   };
 
   // Forgot password success -> Transition to Login
@@ -174,9 +169,9 @@ function AppContent() {
             boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)'
           }}>
             <div 
-              onClick={() => setCurrentView('dashboard')}
+              onClick={() => setCurrentView('launch')}
               style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
-              title="NexusOCR Translation Studio"
+              title="NexusOCR Launch Keynote"
             >
               <div style={{
                 width: '36px',
@@ -189,7 +184,7 @@ function AppContent() {
                 color: '#ffffff',
                 boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)'
               }}>
-                <FileSearch size={19} />
+                <Rocket size={19} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontFamily: 'var(--font-sans)', fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', lineHeight: 1.1 }}>
@@ -202,6 +197,47 @@ function AppContent() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {currentView === 'launch' ? (
+                <button
+                  onClick={() => setCurrentView('dashboard')}
+                  className="btn btn-secondary btn-sm"
+                  style={{ 
+                    fontWeight: 700, 
+                    padding: '0.45rem 1rem', 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    gap: '6px',
+                    borderRadius: '9px',
+                    fontSize: '0.85rem',
+                    color: '#2563eb',
+                    borderColor: '#bfdbfe',
+                    background: '#eff6ff'
+                  }}
+                  title="Open OCR Translation Studio"
+                >
+                  <FileSearch size={15} />
+                  <span>Translation Studio</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => setCurrentView('launch')}
+                  className="btn btn-secondary btn-sm"
+                  style={{ 
+                    fontWeight: 700, 
+                    padding: '0.45rem 1rem', 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    gap: '6px',
+                    borderRadius: '9px',
+                    fontSize: '0.85rem'
+                  }}
+                  title="Return to Launch Keynote"
+                >
+                  <Rocket size={15} />
+                  <span>Launch Page</span>
+                </button>
+              )}
+
               <button
                 onClick={() => setCurrentView('login')}
                 className="btn btn-secondary btn-sm"
@@ -291,9 +327,9 @@ function AppContent() {
               />
             )}
 
-            {/* Step 3: Home Landing Page */}
-            {currentView === 'landing' && (
-              <LandingPage setCurrentView={setCurrentView} user={user} />
+            {/* Step 3: Launch Keynote & Interactive Architecture */}
+            {(currentView === 'launch' || currentView === 'landing') && (
+              <LaunchPage setCurrentView={setCurrentView} user={user} />
             )}
 
             {/* OCR Studio Workbench */}
@@ -323,8 +359,8 @@ function AppContent() {
           </ErrorBoundary>
         </main>
 
-        {/* Footer is only rendered on the Home Overview page, hidden on all other pages */}
-        {currentView === 'landing' && (
+        {/* Footer is rendered on the Launch Page */}
+        {(currentView === 'launch' || currentView === 'landing') && (
           <Footer setCurrentView={setCurrentView} user={user} />
         )}
       </div>

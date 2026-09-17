@@ -83,9 +83,8 @@ export const nexusApi = {
    * @param {File} file - Document file object
    * @param {string} srcLang - Source language code (e.g. 'en')
    * @param {string} tgtLang - Target language code (e.g. 'gu', 'hi')
-   * @param {number|null} maxPages - Optional max pages limit
    */
-  async submitTranslation(file, srcLang = 'en', tgtLang = 'gu', maxPages = null) {
+  async submitTranslation(file, srcLang = 'en', tgtLang = 'gu') {
     const isImage = file.type?.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|tiff|svg)$/i.test(file.name);
     if (isImage) {
       throw new Error('Image files (PNG, JPG, etc.) are not supported. Only documents (.pdf, .docx, .txt, .doc, .rtf, .odt) are supported.');
@@ -107,9 +106,6 @@ export const nexusApi = {
     formData.append('file', file);
     formData.append('src_lang', srcLang);
     formData.append('tgt_lang', tgtLang);
-    if (maxPages && Number(maxPages) > 0) {
-      formData.append('max_pages', String(maxPages));
-    }
     if (isGuest) {
       formData.append('is_guest', 'true');
     } else {

@@ -20,7 +20,6 @@ def main():
     parser.add_argument("--input", "-i", type=str, required=True, help="Path to input PDF")
     parser.add_argument("--src", "-s", type=str, default="en", help="Source language (e.g. en, gu, hi)")
     parser.add_argument("--tgt", "-t", type=str, default="gu", help="Target language (e.g. gu, hi, en)")
-    parser.add_argument("--pages", "-p", type=int, default=None, help="Max pages to process (for testing)")
     parser.add_argument("--output", "-o", type=str, default=None, help="Custom output PDF filename")
 
     args = parser.parse_args()
@@ -36,7 +35,6 @@ def main():
         input_pdf_path=str(input_path),
         src_lang=args.src,
         tgt_lang=args.tgt,
-        max_pages=args.pages,
         output_filename=args.output
     )
 

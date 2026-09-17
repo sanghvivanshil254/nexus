@@ -43,9 +43,10 @@ ALL_INDIC_LANGS: Set[str] = {
     "urd_Arab",  # Urdu
 }
 
-# Standard 2-letter / ISO codes & names to Flores-200 language tags
+# The 27 Authentically Supported Languages:
+# 22 Scheduled Indian Languages + English + 4 Benchmarked Global Languages
 LANG_CODE_MAP: Dict[str, str] = {
-    # 22 Scheduled Indian Languages
+    # 22 Scheduled Indian Languages (IndicTrans2)
     "as": "asm_Beng", "asm": "asm_Beng", "assamese": "asm_Beng",
     "bn": "ben_Beng", "ben": "ben_Beng", "bengali": "ben_Beng",
     "brx": "bod_Deva", "bod": "bod_Deva", "bodo": "bod_Deva",
@@ -69,92 +70,12 @@ LANG_CODE_MAP: Dict[str, str] = {
     "te": "tel_Telu", "tel": "tel_Telu", "telugu": "tel_Telu",
     "ur": "urd_Arab", "urd": "urd_Arab", "urdu": "urd_Arab",
 
-    # Major European & Global Languages
+    # English & Core Global Languages (OPUS-MT / Neural)
     "en": "eng_Latn", "eng": "eng_Latn", "english": "eng_Latn",
     "es": "spa_Latn", "spa": "spa_Latn", "spanish": "spa_Latn",
     "fr": "fra_Latn", "fra": "fra_Latn", "french": "fra_Latn",
     "de": "deu_Latn", "deu": "deu_Latn", "german": "deu_Latn",
-    "it": "ita_Latn", "ita": "ita_Latn", "italian": "ita_Latn",
-    "pt": "por_Latn", "por": "por_Latn", "portuguese": "por_Latn",
-    "nl": "nld_Latn", "nld": "nld_Latn", "dutch": "nld_Latn",
     "ru": "rus_Cyrl", "rus": "rus_Cyrl", "russian": "rus_Cyrl",
-    "uk": "ukr_Cyrl", "ukr": "ukr_Cyrl", "ukrainian": "ukr_Cyrl",
-    "pl": "pol_Latn", "pol": "pol_Latn", "polish": "pol_Latn",
-    "cs": "ces_Latn", "ces": "ces_Latn", "czech": "ces_Latn",
-    "sk": "slk_Latn", "slk": "slk_Latn", "slovak": "slk_Latn",
-    "bg": "bul_Cyrl", "bul": "bul_Cyrl", "bulgarian": "bul_Cyrl",
-    "ro": "ron_Latn", "ron": "ron_Latn", "romanian": "ron_Latn",
-    "el": "ell_Grek", "ell": "ell_Grek", "greek": "ell_Grek",
-
-    # Asian Languages
-    "zh": "zho_Hans", "chi": "zho_Hans", "chinese": "zho_Hans", "chinese_simplified": "zho_Hans",
-    "zh-tw": "zho_Hant", "chinese_traditional": "zho_Hant",
-    "ja": "jpn_Jpan", "jpn": "jpn_Jpan", "japanese": "jpn_Jpan",
-    "ko": "kor_Hang", "kor": "kor_Hang", "korean": "kor_Hang",
-    "vi": "vie_Latn", "vie": "vie_Latn", "vietnamese": "vie_Latn",
-    "th": "tha_Thai", "tha": "tha_Thai", "thai": "tha_Thai",
-    "id": "ind_Latn", "ind": "ind_Latn", "indonesian": "ind_Latn",
-    "ms": "zsm_Latn", "zsm": "zsm_Latn", "malay": "zsm_Latn",
-    "tl": "tgl_Latn", "tgl": "tgl_Latn", "tagalog": "tgl_Latn", "filipino": "tgl_Latn",
-
-    # Middle Eastern & Central Asian Languages
-    "ar": "arb_Arab", "ara": "arb_Arab", "arabic": "arb_Arab",
-    "arz": "arz_Arab", "egyptian_arabic": "arz_Arab",
-    "fa": "pes_Arab", "pes": "pes_Arab", "persian": "pes_Arab",
-    "tr": "tur_Latn", "tur": "tur_Latn", "turkish": "tur_Latn",
-    "he": "heb_Hebr", "heb": "heb_Hebr", "hebrew": "heb_Hebr",
-
-    # African Languages
-    "sw": "swh_Latn", "swh": "swh_Latn", "swahili": "swh_Latn",
-    "yo": "yor_Latn", "yor": "yor_Latn", "yoruba": "yor_Latn",
-    "zu": "zul_Latn", "zul": "zul_Latn", "zulu": "zul_Latn",
-    "af": "afr_Latn", "afr": "afr_Latn", "afrikaans": "afr_Latn",
-    "am": "amh_Ethi", "amh": "amh_Ethi", "amharic": "amh_Ethi",
-    "ha": "hau_Latn", "hau": "hau_Latn", "hausa": "hau_Latn",
-    "so": "som_Latn", "som": "som_Latn", "somali": "som_Latn",
-    "ln": "lin_Latn", "lin": "lin_Latn", "lingala": "lin_Latn",
-    "wo": "wol_Latn", "wol": "wol_Latn", "wolof": "wol_Latn",
-
-    # Remaining documented NLLB languages
-    "da": "dan_Latn", "danish": "dan_Latn", "et": "est_Latn", "estonian": "est_Latn",
-    "fi": "fin_Latn", "finnish": "fin_Latn", "sv": "swe_Latn", "swedish": "swe_Latn",
-    "no": "nob_Latn", "norwegian_bokmal": "nob_Latn", "nn": "nno_Latn", "norwegian_nynorsk": "nno_Latn",
-    "is": "isl_Latn", "icelandic": "isl_Latn", "ga": "gle_Latn", "irish": "gle_Latn",
-    "cy": "cym_Latn", "welsh": "cym_Latn", "gd": "gla_Latn", "scottish_gaelic": "gla_Latn",
-    "ca": "cat_Latn", "catalan": "cat_Latn", "gl": "glg_Latn", "galician": "glg_Latn",
-    "eu": "eus_Latn", "basque": "eus_Latn", "mt": "mlt_Latn", "maltese": "mlt_Latn",
-    "eo": "epo_Latn", "esperanto": "epo_Latn", "sl": "slv_Latn", "slovenian": "slv_Latn",
-    "hr": "hrv_Latn", "croatian": "hrv_Latn", "sr": "srp_Cyrl", "serbian": "srp_Cyrl",
-    "mk": "mkd_Cyrl", "macedonian": "mkd_Cyrl", "hu": "hun_Latn", "hungarian": "hun_Latn",
-    "sq": "als_Latn", "albanian": "als_Latn", "lt": "lit_Latn", "lithuanian": "lit_Latn",
-    "lv": "lvs_Latn", "latvian": "lvs_Latn", "be": "bel_Cyrl", "belarusian": "bel_Cyrl",
-    "mn": "khk_Cyrl", "mongolian": "khk_Cyrl", "bo": "bod_Tibt", "tibetan": "bod_Tibt",
-    "my": "mya_Mymr", "burmese": "mya_Mymr", "km": "khm_Khmr", "khmer": "khm_Khmr",
-    "lo": "lao_Lao", "lao": "lao_Lao", "jv": "jav_Latn", "javanese": "jav_Latn",
-    "su": "sun_Latn", "sundanese": "sun_Latn", "ceb": "ceb_Latn", "cebuano": "ceb_Latn",
-    "ht": "hat_Latn", "haitian_creole": "hat_Latn", "qu": "quy_Latn", "quechua": "quy_Latn",
-    "ay": "aym_Latn", "aymara": "aym_Latn", "gn": "grn_Latn", "guarani": "grn_Latn",
-    "nv": "nav_Latn", "navajo": "nav_Latn", "kl": "kal_Latn", "greenlandic": "kal_Latn",
-    "ary": "ary_Arab", "moroccan_arabic": "ary_Arab", "aeb": "aeb_Arab", "tunisian_arabic": "aeb_Arab",
-    "acm": "acm_Arab", "iraqi_arabic": "acm_Arab", "apc": "apc_Arab", "levantine_arabic": "apc_Arab",
-    "prs": "prs_Arab", "dari": "prs_Arab", "ps": "pbt_Arab", "pashto": "pbt_Arab",
-    "ku": "kmr_Latn", "kurdish": "kmr_Latn", "az": "azj_Latn", "azerbaijani": "azj_Latn",
-    "kk": "kaz_Cyrl", "kazakh": "kaz_Cyrl", "ky": "kir_Cyrl", "kyrgyz": "kir_Cyrl",
-    "uz": "uzn_Latn", "uzbek": "uzn_Latn", "tg": "tgk_Cyrl", "tajik": "tgk_Cyrl",
-    "tk": "tuk_Latn", "turkmen": "tuk_Latn", "ug": "uig_Arab", "uyghur": "uig_Arab",
-    "hy": "hye_Armn", "armenian": "hye_Armn", "ka": "kat_Geor", "georgian": "kat_Geor",
-    "ak": "aka_Latn", "akan": "aka_Latn", "bm": "bam_Latn", "bambara": "bam_Latn",
-    "bem": "bem_Latn", "bemba": "bem_Latn", "ny": "nya_Latn", "chichewa": "nya_Latn",
-    "din": "din_Latn", "dinka": "din_Latn", "dyu": "dyu_Latn", "dyula": "dyu_Latn",
-    "ee": "ewe_Latn", "ewe": "ewe_Latn", "ff": "ful_Latn", "fulfulde": "ful_Latn",
-    "rw": "kin_Latn", "kinyarwanda": "kin_Latn", "ki": "kik_Latn", "kikuyu": "kik_Latn",
-    "mg": "plt_Latn", "malagasy": "plt_Latn", "om": "gaz_Latn", "oromo": "gaz_Latn",
-    "st": "sot_Latn", "sesotho": "sot_Latn", "sn": "sna_Latn", "shona": "sna_Latn",
-    "ss": "ssw_Latn", "swati": "ssw_Latn", "ti": "tir_Ethi", "tigrinya": "tir_Ethi",
-    "ts": "tso_Latn", "tsonga": "tso_Latn", "tn": "tsn_Latn", "tswana": "tsn_Latn",
-    "umb": "umb_Latn", "umbundu": "umb_Latn", "xh": "xho_Latn", "xhosa": "xho_Latn",
-    "mi": "mri_Latn", "maori": "mri_Latn", "sm": "smo_Latn", "samoan": "smo_Latn",
-    "to": "ton_Latn", "tongan": "ton_Latn", "fj": "fij_Latn", "fijian": "fij_Latn",
 }
 
 # Published AfriNLLB directions: English<->African/AU languages and
@@ -174,12 +95,9 @@ FLORES_TO_ISO_MAP: Dict[str, str] = {
     "ben_Beng": "bn", "tam_Taml": "ta", "tel_Telu": "te", "kan_Knda": "kn",
     "mal_Mlym": "ml", "pan_Guru": "pa", "urd_Arab": "ur", "asm_Beng": "as",
     "ory_Orya": "or", "san_Deva": "sa", "npi_Deva": "ne", "snd_Arab": "sd",
-    "spa_Latn": "es", "fra_Latn": "fr", "deu_Latn": "de", "ita_Latn": "it",
-    "por_Latn": "pt", "nld_Latn": "nl", "rus_Cyrl": "ru", "ukr_Cyrl": "uk",
-    "pol_Latn": "pl", "ces_Latn": "cs", "zho_Hans": "zh", "jpn_Jpan": "ja",
-    "kor_Hang": "ko", "vie_Latn": "vi", "tha_Thai": "th", "ind_Latn": "id",
-    "arb_Arab": "ar", "tur_Latn": "tr", "pes_Arab": "fa", "heb_Hebr": "he",
-    "swh_Latn": "sw", "yor_Latn": "yo", "zul_Latn": "zu", "afr_Latn": "af",
+    "bod_Deva": "brx", "doi_Deva": "doi", "kas_Arab": "ks", "kok_Deva": "kok",
+    "mai_Deva": "mai", "mni_Beng": "mni", "sat_Olck": "sat",
+    "spa_Latn": "es", "fra_Latn": "fr", "deu_Latn": "de", "rus_Cyrl": "ru",
 }
 
 def normalize_lang_code(code: str) -> str:

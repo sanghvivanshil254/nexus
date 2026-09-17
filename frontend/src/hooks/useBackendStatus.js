@@ -38,7 +38,7 @@ export function useBackendStatus(pollIntervalMs = 25000) {
           loadedModels: health.loaded_models || [],
           cachedModels: models?.locally_cached_models || [],
           offlineReady: Boolean(models?.offline_ready),
-          languageCount: health.supported_languages_count || 41,
+          languageCount: health.supported_languages_count || 27,
           lastChecked: new Date(),
           error: null,
           isLoading: false
