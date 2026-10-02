@@ -1423,12 +1423,12 @@ export const OcrPipelineDashboard = ({ user }) => {
                             Translating page {activePdfJob?.completed_pages || 0} of {activePdfJob?.total_pages || '...'}
                           </span>
                           <span style={{ fontWeight: 700, color: '#1e40af' }}>
-                            {activePdfJob?.total_pages ? Math.round(((activePdfJob?.completed_pages || 0) / activePdfJob?.total_pages) * 100) : 5}%
+                            {activePdfJob?.total_pages ? `${Math.round(((activePdfJob?.completed_pages || 0) / activePdfJob.total_pages) * 100)}%` : 'Starting\u2026'}
                           </span>
                         </div>
                         <div style={{ width: '100%', height: '6px', background: '#dbeafe', borderRadius: '3px', overflow: 'hidden' }}>
                           <div style={{
-                            width: `${activePdfJob?.total_pages ? Math.max(8, ((activePdfJob?.completed_pages || 0) / activePdfJob?.total_pages) * 100) : 10}%`,
+                            width: `${activePdfJob?.total_pages ? Math.max(8, ((activePdfJob?.completed_pages || 0) / activePdfJob.total_pages) * 100) : 8}%`,
                             height: '100%',
                             background: '#2563eb',
                             transition: 'width 0.3s ease'

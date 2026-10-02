@@ -63,10 +63,10 @@ def process_pdf_background(job_id: str, file_path: str, src_lang: str, tgt_lang:
                 src_lang=src_lang,
                 tgt_lang=tgt_lang,
                 job_id=job_id,
-                max_pages=None
             )
         except Exception as e:
             logger.error("Background translation failed for job %s: %s", job_id, e)
+            mongo_db.fail_job(job_id, str(e))
 
 @app.get("/api/health")
 def health_check():
